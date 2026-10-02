@@ -99,3 +99,31 @@ res = d.reservas_recentes([{"content": oferta, "scheduledAt": "2026-10-02T21:00:
                           datetime(2026, 10, 2, 18, 30, tzinfo=d.BRT))
 assert not any(s.strftime("%d/%m %H:%M") == "05/10 10:30" for s in ag.livres(d.DANIELLE, res))
 print("OK — todas as verificações passaram")
+
+# ---- viabilidade trabalhista (critérios do Gem/POP)
+AG = datetime(2026, 10, 2, 19, 45, tzinfo=d.BRT)
+faby = ("‼️NOVA OPORTUNIDADE‼️\nLEAD: Faby (5594900000088)\nÁREA: Trabalhista\n"
+        "A senhora é auxiliar de chão em uma malharia, recebe salário mínimo e ainda está trabalhando lá. "
+        "Começou no dia 12/08, fez 4 dias de experiência e não recebeu por um dia em que fez exame admissional.")
+av = d.avaliar_trabalhista(faby, AG)
+print("Faby ->", av["nota"], av["eixos"], av["dias"], av["motivo"])
+assert not av["agenda"], "Faby não deve receber horário automático"
+bern = ("‼️NOVA OPORTUNIDADE‼️\nÁREA: Trabalhista — Rescisão Indireta\nBernardo, Auxiliar de Produção, "
+        "dois anos de empresa, salário atrasado e FGTS sem depósito.")
+av = d.avaliar_trabalhista(bern, AG)
+print("Bernardo ->", av["nota"], av["eixos"], av["dias"], av["motivo"])
+assert av["agenda"]
+gest = "ÁREA: Trabalhista — Gestante\nTrabalha há 2 meses, está grávida de 3 meses e foi demitida."
+assert d.avaliar_trabalhista(gest, AG)["agenda"]
+semreg = "ÁREA: Trabalhista\nTrabalha há 1 mês sem carteira assinada, salário mínimo."
+av = d.avaliar_trabalhista(semreg, AG)
+print("Sem registro 1 mês ->", av["nota"], av["eixos"], av["motivo"])
+assert not av["agenda"], "sem registro curto não é exceção"
+semreg2 = "ÁREA: Trabalhista\nTrabalha há 3 anos sem carteira assinada, faz hora extra sem receber."
+av = d.avaliar_trabalhista(semreg2, AG)
+print("Sem registro 3 anos ->", av["nota"], av["eixos"], av["motivo"])
+assert av["agenda"]
+grupo_ag = {"mensagens": [{"sender": "CONTACT", "content": "AGENDAR Faby"}]}
+assert d.liberado_pelo_grupo({"nome": "Faby Aguiar", "tel": "5594900000088"}, grupo_ag)
+assert not d.liberado_pelo_grupo({"nome": "Maria", "tel": "5594900000077"}, grupo_ag)
+print("OK — viabilidade conferida")

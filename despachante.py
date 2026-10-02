@@ -172,11 +172,11 @@ def resumo_do_caso(texto):
     return (texto[:700] + "…") if len(texto) > 700 else texto
 
 
-def leads_recentes(grupo, tarefas, agora):
+def leads_recentes(grupo, tarefas, agora, janela_h=JANELA_LEAD_H):
     leads = {}
 
     def guardar(nome, tel, texto, quando, origem):
-        if tel in EQUIPE or agora - quando > timedelta(hours=JANELA_LEAD_H):
+        if tel in EQUIPE or agora - quando > timedelta(hours=janela_h):
             return
         atual = leads.get(tel)
         if not atual or quando > atual["quando"] or (origem == "tarefa" and atual["origem"] == "grupo"):
@@ -246,6 +246,94 @@ def reprova_viabilidade(texto):
     if any(k in sa for k in ("gestante", "gravida", "gravidez")) or "experiencia" not in sa:
         return False
     return any(int(n) <= 45 for n in re.findall(r"(\d{1,3})\s*dias", sa))
+
+
+# Critérios de viabilidade do escritório (Gem "Atendimento cliente trabalhista" + POP do
+# NotebookLM): quatro eixos que somam 10. Aqui a nota é uma aproximação pelas palavras do
+# briefing; na dúvida o lead NÃO recebe horário e vai ao grupo para o advogado decidir.
+# Exceções que sempre recebem horário (decisão da usuária, 02/10/2026). Sem registro na
+# carteira NÃO é exceção: conta como falta objetiva e depende do tempo sem registro.
+EXCECOES = {
+    "gestante": r"gestante|gravid",
+    "acidente ou doença": r"acidente|doenca ocupacional|afastad|\binss\b|auxilio.doenca|lesao|cirurgia|\bcat\b",
+    "assédio": r"assedio|humilha|xinga|constrang",
+}
+FALTAS_OBJETIVAS = {
+    "FGTS irregular": r"fgts",
+    "salário atrasado ou por fora": r"salario\w* (atrasad|por fora)|atras\w* (no |do |de )?(pagamento|salario)"
+                                    r"|por fora|nao (recebe|recebi|recebeu|pag\w*) (o )?salario",
+    "sem registro na carteira": r"sem (registro|carteira)|nao assin\w* (a )?carteira|carteira nao (foi )?assinada",
+    "horas extras sem pagamento": r"hora\w* extra",
+    "intervalo suprimido": r"intervalo",
+    "folgas/domingos/DSR": r"\bfolgas?\b|domingo|feriado|\bdsr\b",
+    "insalubridade/periculosidade": r"insalubr|periculos",
+    "acúmulo ou desvio de função": r"acumulo de funcao|desvio de funcao|acumul\w* funca",
+    "férias ou 13º": r"ferias|13o|13º|decimo terceiro",
+    "verbas rescisórias": r"rescis|verbas|seguro.desemprego",
+}
+PROVA_DOCUMENTO = (r"extrato|holerite|contracheque|comprovante|documento|laudo|atestado|\baso\b"
+                   r"|cartao de ponto|folha de ponto|espelho de ponto")
+PROVA_TESTEMUNHA = r"testemunha|print|conversa|audio|video|foto|mensage"
+RISCO_ALTO = r"justa causa|abandono|quitacao|acordo assinado|assinou (o )?acordo|advertenc|suspens"
+NUMEROS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "seis": 6}
+MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6, "jul": 7, "ago": 8, "set": 9,
+         "out": 10, "nov": 11, "dez": 12}
+
+
+def tempo_de_empresa_dias(sa, agora):
+    """Tempo de empresa em dias a partir do briefing (None se não der para saber).
+
+    A data de início tem prioridade; depois, "N anos/meses/dias" que não seja
+    a duração do contrato de experiência.
+    """
+    m = re.search(r"(?:comec\w*|admitid\w*|entrou|desde|inicio)\D{0,25}?(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?", sa)
+    if m:
+        ano = int(m.group(3)) if m.group(3) else agora.year
+        ano = ano + 2000 if ano < 100 else ano
+        try:
+            inicio = date(ano, int(m.group(2)), int(m.group(1)))
+            if inicio > agora.date():
+                inicio = date(ano - 1, inicio.month, inicio.day)
+            return (agora.date() - inicio).days
+        except ValueError:
+            pass
+    m = re.search(r"desde (" + "|".join(MESES) + r")\w*(?: de)? (\d{4})", sa)
+    if m:
+        return (agora.date() - date(int(m.group(2)), MESES[m.group(1)], 1)).days
+    for m in re.finditer(r"\b(\d+|um|uma|dois|duas|tres|quatro|cinco|seis)\s*(anos?|mes(?:es)?|semanas?|dias?)\b"
+                         r"(?! de experiencia)", sa):
+        n = NUMEROS.get(m.group(1)) or int(m.group(1))
+        return n * {"ano": 365, "mes": 30, "sem": 7, "dia": 1}[m.group(2)[:3]]
+    return None
+
+
+def avaliar_trabalhista(texto, agora):
+    """Nota 0-10 pelos quatro eixos; decide se o lead recebe horário sozinho."""
+    corpo = sem_acento(texto.split("Resumo do atendimento:")[0])
+    excecao = next((nome for nome, rx in EXCECOES.items() if re.search(rx, corpo)), None)
+    faltas = [nome for nome, rx in FALTAS_OBJETIVAS.items() if re.search(rx, corpo)]
+    dias = tempo_de_empresa_dias(corpo, agora)
+    solidez = 3 if len(faltas) >= 2 else 2 if faltas else (1 if excecao == "assédio" else 0)
+    prova = 3 if re.search(PROVA_DOCUMENTO, corpo) else 2 if re.search(PROVA_TESTEMUNHA, corpo) else 1
+    if dias is None:
+        economico = 1
+    else:
+        economico = 2 if dias >= 730 or (dias >= 365 and len(faltas) >= 2) else 1 if dias >= 180 else 0
+    risco = 0 if re.search(RISCO_ALTO, corpo) else 2
+    nota = prova + solidez + economico + risco
+    motivo = None
+    if reprova_viabilidade(texto) and (dias is None or dias <= 45):
+        motivo = "contrato de experiência de até 45 dias (filtro de entrada)"
+    elif solidez == 0:
+        motivo = "nenhuma falta objetiva identificada no relato"
+    elif economico == 0 and len(faltas) < 2:
+        motivo = "contrato curto com falta pontual (expressão econômica baixa)"
+    elif nota < 5:
+        motivo = f"nota {nota}/10, abaixo de 5"
+    return {"nota": nota,
+            "eixos": f"Prova {prova}/3 · Solidez {solidez}/3 · Econômico {economico}/2 · Risco {risco}/2",
+            "faltas": faltas, "dias": dias, "excecao": excecao, "motivo": motivo,
+            "agenda": bool(excecao) or motivo is None}
 
 
 # ---------------------------------------------------------------- agenda
@@ -354,11 +442,16 @@ def advogado_do_texto(txt):
     return DANIELLE if "Danielle" in txt else FERNANDA if "Fernanda" in txt else LUCAS
 
 
-def reservas_recentes(agendamentos, agora):
+def reservas_recentes(mensagens, agora):
+    """Horários oferecidos nas últimas horas a qualquer lead contam como ocupados.
+
+    Lê as próprias conversas: listar_agendamentos não devolve o texto da mensagem.
+    """
     reservados = set()
-    for a in agendamentos:
-        txt = a.get("content") or ""
-        if MARCA_OFERTA not in txt or agora - ler_iso(a["scheduledAt"]) > timedelta(hours=OFERTA_RESERVA_H):
+    for m in mensagens:
+        txt = m.get("content") or ""
+        quando = m.get("createdAt") or m.get("scheduledAt")
+        if MARCA_OFERTA not in txt or agora - ler_iso(quando) > timedelta(hours=OFERTA_RESERVA_H):
             continue
         adv = advogado_do_texto(txt)
         for dd, mm, hh, mi in RE_SLOT.findall(txt):
@@ -378,27 +471,82 @@ def primeiro_nome(nome):
     return p[:1].upper() + p[1:].lower() if p else ""
 
 
+class Conversas:
+    """Lê cada conversa no máximo uma vez por rodada."""
+
+    def __init__(self, zaia):
+        self.zaia, self.cache = zaia, {}
+
+    def de(self, tel):
+        if tel not in self.cache:
+            conv = self.zaia.chamar("buscar_conversa_por_telefone", telefone=tel).get("conversa")
+            msgs = []
+            if conv:
+                msgs = self.zaia.chamar("ler_conversa", conversaId=conv["id"]).get("messages", [])
+                msgs = sorted(msgs, key=lambda m: m["createdAt"])
+            self.cache[tel] = (conv, msgs)
+        return self.cache[tel]
+
+
 # ---------------------------------------------------------------- etapa 1: oferta
-def ofertar(zaia, agenda_fn, leads, agendamentos, agora, contagem):
-    reservados = reservas_recentes(agendamentos, agora)
+RE_AGENDAR = re.compile(r"^\s*\*?AGENDAR\*?\s+(.+)", re.I | re.M)
+
+
+def liberado_pelo_grupo(lead, grupo):
+    """Advogado respondeu no grupo "AGENDAR <nome ou telefone>"."""
+    nome = sem_acento(lead["nome"]).strip()
+    for m in grupo.get("mensagens", []):
+        if m.get("sender") == "AGENT":
+            continue
+        for alvo in RE_AGENDAR.findall(m.get("content") or ""):
+            alvo = sem_acento(alvo).strip().strip("*")
+            digitos = re.sub(r"\D", "", alvo)
+            if (len(digitos) >= 8 and lead["tel"].endswith(digitos[-8:])) or \
+                    (alvo and nome and alvo.split()[0] == nome.split()[0]):
+                return True
+    return False
+
+
+def avisar_nao_agendado(zaia, grupo, lead, av):
+    ja = any("LEAD NÃO AGENDADO" in (m.get("content") or "") and lead["tel"] in (m.get("content") or "")
+             for m in grupo.get("mensagens", []))
+    if ja:
+        return
+    if DRY_RUN:
+        log(f"[simulação] lead trabalhista não agendado — {av['motivo']}")
+        return
+    tempo = f"{av['dias']} dias de empresa" if av["dias"] is not None else "tempo de empresa não informado"
+    faltas = ", ".join(av["faltas"]) or "nenhuma"
+    zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+        f"🔎 *LEAD NÃO AGENDADO — {lead['nome']} ({lead['tel']})*\n"
+        f"Trabalhista · nota {av['nota']}/10 ({av['eixos']}) · {tempo}\n"
+        f"Motivo: {av['motivo']}. Faltas objetivas no relato: {faltas}.\n"
+        f"*Caso:* {resumo_do_caso(lead['texto'])}\n"
+        f"👉 Para oferecer horários mesmo assim, responda aqui: *AGENDAR {primeiro_nome(lead['nome'])}*"))
+    log("lead trabalhista não agendado (viabilidade) — avisado no grupo")
+
+
+def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
+    todas = [m for l in leads for m in conversas.de(l["tel"])[1]]
+    reservados = reservas_recentes(todas, agora)
     for lead in leads:
         area, pular = classificar(lead["texto"])
-        if not pular and area == "trabalhista" and reprova_viabilidade(lead["texto"]):
-            pular = "viabilidade"
+        if not pular and area == "trabalhista" and not liberado_pelo_grupo(lead, grupo):
+            av = avaliar_trabalhista(lead["texto"], agora)
+            if not av["agenda"]:
+                avisar_nao_agendado(zaia, grupo, lead, av)
+                pular = "viabilidade"
         if pular:
             contagem["pulados"] += 1
             log(f"lead pulado ({pular}) — fica com a rotina com IA")
             continue
-        conv = zaia.chamar("buscar_conversa_por_telefone", telefone=lead["tel"]).get("conversa")
+        conv, msgs = conversas.de(lead["tel"])
         if not conv:
             continue
         contato_id = conv["contact"]["id"]
-        if any(a.get("contactId") == contato_id and MARCA_OFERTA in (a.get("content") or "")
-               for a in agendamentos):
-            continue
-        msgs = zaia.chamar("ler_conversa", conversaId=conv["id"]).get("messages", [])
-        if any(MARCA_OFERTA in m.get("content", "") or MARCA_CONFIRMACAO in m.get("content", "")
-               for m in msgs):
+        recentes = [m for m in msgs if agora - ler_iso(m["createdAt"]) <= timedelta(days=JANELA_CONFIRMACAO_D)]
+        if any(MARCA_OFERTA in (m.get("content") or "") or MARCA_CONFIRMACAO in (m.get("content") or "")
+               for m in recentes):
             continue
         depois = [m for m in msgs if ler_iso(m["createdAt"]) >= lead["quando"] - timedelta(minutes=5)]
         if any(m.get("sender") == "USER" for m in depois):
@@ -406,7 +554,7 @@ def ofertar(zaia, agenda_fn, leads, agendamentos, agora, contagem):
             log("lead pulado (alguém da equipe já está atendendo)")
             continue
         if area == "criminal" and re.search(r"\b(pres[oa]|depoimento|audiencia)\b",
-                                           sem_acento(" ".join(m.get("content", "") for m in msgs))):
+                                           sem_acento(" ".join(m.get("content") or "" for m in msgs))):
             contagem["pulados"] += 1
             log("lead pulado (criminal com possível urgência) — fica com a rotina com IA")
             continue
@@ -470,23 +618,17 @@ def ofertar(zaia, agenda_fn, leads, agendamentos, agora, contagem):
 
 
 # ---------------------------------------------------------------- etapa 2: confirmação
-def confirmar(zaia, easyjur_fn, agenda_fn, leads, enviados, pendentes, agora, contagem):
-    resumos = {l["tel"]: l for l in leads}
-    vistos = set()
-    for a in enviados:
-        txt = a.get("content") or ""
-        if MARCA_OFERTA not in txt or a.get("contactId") in vistos:
+def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, contagem):
+    for lead in leads:
+        conv, msgs = conversas.de(lead["tel"])
+        if not conv:
             continue
-        if agora - ler_iso(a["scheduledAt"]) > timedelta(days=JANELA_CONFIRMACAO_D):
+        ofertas = [m for m in msgs if MARCA_OFERTA in (m.get("content") or "")]
+        if not ofertas:
             continue
-        vistos.add(a.get("contactId"))
-        conv_id = a.get("conversationId")
-        if not conv_id:
-            continue
-        conversa = zaia.chamar("ler_conversa", conversaId=conv_id)
-        msgs = sorted(conversa.get("messages", []), key=lambda m: m["createdAt"])
-        conf = [m for m in msgs if m.get("sender") == "AGENT" and MARCA_CONFIRMACAO in m.get("content", "")
-                and ler_iso(m["createdAt"]) >= ler_iso(a["scheduledAt"])]
+        txt = ofertas[-1]["content"]
+        conf = [m for m in msgs if m.get("sender") == "AGENT" and MARCA_CONFIRMACAO in (m.get("content") or "")
+                and m["createdAt"] >= ofertas[-1]["createdAt"]]
         if not conf:
             continue
         ultima = conf[-1]["content"]
@@ -496,10 +638,10 @@ def confirmar(zaia, easyjur_fn, agenda_fn, leads, enviados, pendentes, agora, co
         inicio = data_do_texto(*achado.groups(), agora)
         if inicio < agora:
             continue
-        adv = advogado_do_texto(ultima) if any(n in ultima for n in ("Danielle", "Fernanda", "Lucas")) \
-            else advogado_do_texto(txt)
-        contato = conversa.get("contact", {})
-        nome, tel = contato.get("name", "").strip(), contato.get("phone", "")
+        adv = advogado_do_texto(ultima) if any(n in ultima for n in ("Danielle", "Fernanda", "Lucas"))             else advogado_do_texto(txt)
+        contato_id, conv_id = conv["contact"]["id"], conv["id"]
+        nome = (conv["contact"].get("name") or lead["nome"]).strip()
+        tel = lead["tel"]
 
         ej = easyjur_fn()
         agenda = agenda_fn()
@@ -508,7 +650,6 @@ def confirmar(zaia, easyjur_fn, agenda_fn, leads, enviados, pendentes, agora, co
                for i in existentes):
             continue  # já gravado (pela equipe, pelo auditor ou numa rodada anterior)
         livres = agenda.livres(adv, set())
-        lead = resumos.get(tel, {})
         area, _ = classificar(lead.get("texto", ""))
         resumo = resumo_do_caso(lead.get("texto", "")) or "ver a conversa no WhatsApp."
         if inicio not in livres:
@@ -543,9 +684,9 @@ def confirmar(zaia, easyjur_fn, agenda_fn, leads, enviados, pendentes, agora, co
                   local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
                   f"pela Annie. {resumo}")
         lembrete = inicio - timedelta(hours=1)
-        tem_pendente = any(p.get("contactId") == a.get("contactId") for p in pendentes)
+        tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
         if lembrete - agora > timedelta(minutes=10) and not tem_pendente:
-            zaia.chamar("agendar_mensagem", contatoId=a["contactId"], conversaId=conv_id,
+            zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
                         dataHora=lembrete.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
                         assinatura="ia", ativarIaAoResponder=True, mensagem=(
                             f"Olá, {primeiro_nome(nome)}! Passando para confirmar nosso atendimento de hoje "
@@ -567,8 +708,9 @@ def main():
     grupo = zaia.chamar("ler_grupo", grupoId=GRUPO, limit=80)
     tarefas = zaia.chamar("listar_tarefas", limit=100).get("tarefas", [])
     pendentes = zaia.chamar("listar_agendamentos", status="PENDING", limit=50).get("agendamentos", [])
-    enviados = zaia.chamar("listar_agendamentos", status="SENT", limit=50).get("agendamentos", [])
     leads = leads_recentes(grupo, tarefas, agora)
+    leads_conf = leads_recentes(grupo, tarefas, agora, janela_h=24 * JANELA_CONFIRMACAO_D)
+    conversas = Conversas(zaia)
     log(f"leads triados nas últimas {JANELA_LEAD_H} h: {len(leads)}")
 
     cache = {}
@@ -584,8 +726,8 @@ def main():
         return cache["ag"]
 
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0}
-    ofertar(zaia, agenda_fn, leads, pendentes + enviados, agora, contagem)
-    confirmar(zaia, easyjur_fn, agenda_fn, leads, enviados, pendentes, agora, contagem)
+    ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
+    confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem)
     log(f"resumo: {contagem}")
 
 
