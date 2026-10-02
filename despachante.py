@@ -85,8 +85,10 @@ def ler_iso(texto):
 # ---------------------------------------------------------------- cliente MCP
 class MCP:
     def __init__(self, url, token, nome):
+        token = re.sub(r"^\s*(bearer\s+)?", "", token or "", flags=re.I).strip().strip('"\'')
         if not token:
             raise SystemExit(f"Falta a variável de ambiente do token de {nome}.")
+        log(f"{nome}: token com {len(token)} caracteres")
         self.url, self.token, self.nome = url, token, nome
         self.sessao, self.seq = None, 0
         self._post({"jsonrpc": "2.0", "id": self._id(), "method": "initialize",
@@ -101,7 +103,8 @@ class MCP:
     def _post(self, corpo, espera=True):
         cab = {"Content-Type": "application/json",
                "Accept": "application/json, text/event-stream",
-               "Authorization": f"Bearer {self.token}"}
+               "Authorization": f"Bearer {self.token}",
+               "User-Agent": "despachante-funil/2.0 (+https://github.com/estevesadvocaciapbs-rgb/despachante-funil)"}
         if self.sessao:
             cab["Mcp-Session-Id"] = self.sessao
         req = urllib.request.Request(self.url, data=json.dumps(corpo).encode(), headers=cab)
@@ -111,7 +114,8 @@ class MCP:
                     self.sessao = r.headers["Mcp-Session-Id"]
                 bruto = r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"{self.nome}: HTTP {e.code}") from None
+            detalhe = e.read().decode("utf-8", "replace")[:300].replace("\n", " ")
+            raise RuntimeError(f"{self.nome}: HTTP {e.code} — {detalhe}") from None
         if not espera or not bruto.strip():
             return None
         if bruto.lstrip().startswith("{"):
