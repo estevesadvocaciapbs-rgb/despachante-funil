@@ -2,13 +2,10 @@ name: Despachante do funil
 
 on:
   schedule:
-    # três plantões por dia (horário de Brasília): ~6h50, ~12h30 e ~18h10, até as 21h.
-    # Cada plantão dura até 5h45 e confere a Za.Ia a cada 60 segundos.
-    # Se um plantão começar antes do anterior acabar, ele espera na fila e
-    # entra logo em seguida (sem buraco entre eles).
-    - cron: "50 9 * * *"
-    - cron: "30 15 * * *"
-    - cron: "10 21 * * *"
+    # Plantão 24 horas. Cada plantão dura até 5h50 e confere a Za.Ia a cada 60 s.
+    # O disparo é de hora em hora: enquanto um plantão roda, o próximo fica na fila
+    # e entra assim que o anterior termina (sem buraco entre eles).
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       simulacao:
@@ -23,7 +20,7 @@ concurrency:
 jobs:
   despachar:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 358
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
