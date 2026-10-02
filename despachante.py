@@ -535,11 +535,6 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
     reservados = reservas_recentes(todas, agora)
     for lead in leads:
         area, pular = classificar(lead["texto"])
-        if not pular and area == "trabalhista" and not liberado_pelo_grupo(lead, grupo):
-            av = avaliar_trabalhista(lead["texto"], agora)
-            if not av["agenda"]:
-                avisar_nao_agendado(zaia, grupo, lead, av)
-                pular = "viabilidade"
         if pular:
             contagem["pulados"] += 1
             log(f"lead pulado ({pular}) — fica com a rotina com IA")
@@ -552,6 +547,13 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
         if any(MARCA_OFERTA in (m.get("content") or "") or MARCA_CONFIRMACAO in (m.get("content") or "")
                for m in recentes):
             continue
+        if area == "trabalhista" and not liberado_pelo_grupo(lead, grupo):
+            av = avaliar_trabalhista(lead["texto"], agora)
+            if not av["agenda"]:
+                avisar_nao_agendado(zaia, grupo, lead, av)
+                contagem["pulados"] += 1
+                log("lead pulado (viabilidade) — aguarda decisão do advogado no grupo")
+                continue
         depois = [m for m in msgs if ler_iso(m["createdAt"]) >= lead["quando"] - timedelta(minutes=5)]
         if any(m.get("sender") == "USER" for m in depois):
             contagem["pulados"] += 1
