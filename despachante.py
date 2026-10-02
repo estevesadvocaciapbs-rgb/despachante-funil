@@ -729,6 +729,13 @@ def main():
             cache["ag"] = Agenda(easyjur_fn(), agora)
         return cache["ag"]
 
+    if DRY_RUN:  # na simulação, confere também a conexão com o EasyJur
+        itens = easyjur_fn().chamar("list_agenda", id_responsavel_qualquer=DANIELLE["id"], page_size=1)
+        log(f"EasyJur: conexão ok ({len(itens.get('data', [])) if isinstance(itens, dict) else '?'} item lido)")
+        livres = agenda_fn().livres(DANIELLE, set())
+        log("EasyJur: próximos 2 horários da Dra. Danielle: "
+            + "; ".join(texto_slot(s) for s in manha_e_tarde(livres)))
+
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0}
     ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
     confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem)
