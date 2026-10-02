@@ -1,0 +1,43 @@
+name: Despachante do funil
+
+on:
+  schedule:
+    # três plantões por dia (horário de Brasília): ~6h50, ~12h30 e ~18h10, até as 21h.
+    # Cada plantão dura até 5h45 e confere a Za.Ia a cada 60 segundos.
+    # Se um plantão começar antes do anterior acabar, ele espera na fila e
+    # entra logo em seguida (sem buraco entre eles).
+    - cron: "50 9 * * *"
+    - cron: "30 15 * * *"
+    - cron: "10 21 * * *"
+  workflow_dispatch:
+    inputs:
+      simulacao:
+        description: "Só simular uma rodada (não envia nada)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: despachante
+  cancel-in-progress: false
+
+jobs:
+  despachar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rodar despachante
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
+          TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.simulacao }}" = "true" ]; then
+            python despachante.py --dry-run
+          else
+            python despachante.py --vigia
+          fi
