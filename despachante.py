@@ -21,7 +21,7 @@ rotinas com IA.
 Credenciais só por variável de ambiente: ZAIA_TOKEN e EASYJUR_TOKEN.
 Uso:  python despachante.py            (executa)
       python despachante.py --dry-run  (só mostra o que faria, não grava nem envia)
-      python despachante.py --vigia    (plantão: uma rodada por minuto até as 21h)
+      python despachante.py --vigia    (plantão: uma rodada por minuto, 24 h)
 """
 
 import json
@@ -744,15 +744,15 @@ def main():
     log(f"resumo: {contagem}")
 
 
-def vigia(minutos, intervalo_s=60, hora_fim=21):
-    """Fica de plantão: roda uma rodada por minuto até o fim do turno.
+def vigia(minutos, intervalo_s=60):
+    """Fica de plantão: roda uma rodada por minuto, 24 horas por dia.
 
     O agendador do GitHub atrasa e não roda em menos de 5 minutos; um job só,
     acordado, checando a cada 60 s, deixa a oferta sair em até ~2 minutos.
     """
     import time
     fim = time.monotonic() + minutos * 60
-    while time.monotonic() < fim and datetime.now(BRT).hour < hora_fim:
+    while time.monotonic() < fim:
         try:
             main()
         except Exception as erro:
@@ -763,7 +763,7 @@ def vigia(minutos, intervalo_s=60, hora_fim=21):
 
 if __name__ == "__main__":
     if "--vigia" in sys.argv:
-        minutos = int(os.environ.get("VIGIA_MINUTOS", "345"))
+        minutos = int(os.environ.get("VIGIA_MINUTOS", "350"))
         vigia(minutos)
         sys.exit(0)
     try:
