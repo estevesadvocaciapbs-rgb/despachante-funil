@@ -707,6 +707,70 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         log(f"reunião gravada e grupo avisado ({adv['curto']})")
 
 
+# ---------------------------------------------------------------- etapa 3: retomada
+# Se a Annie mandou uma mensagem que NÃO termina com pergunta e o cliente ficou em
+# silêncio, a conversa trava (a Annie só fala quando o cliente fala). Depois de alguns
+# minutos o despachante manda, em nome da Annie, uma pergunta curta de retomada; quando
+# a pessoa responde, a Annie volta a conduzir o roteiro.
+MARCA_RETOMADA = "para eu dar sequência ao seu atendimento"
+RETOMADA_MIN, RETOMADA_MAX = timedelta(minutes=2), timedelta(minutes=15)
+ENCERRAMENTOS = ("equipe vai", "vai te chamar", "vai chamar", "entrará em contato", "entraremos em contato",
+                 "retorna pra marcar", "ficou marcado", "avaliação", "avaliacao", "g.page", "google",
+                 "até logo", "ate logo", "tenha um", "bom descanso", "disponha")
+
+
+def precisa_retomar(msgs, agora):
+    """Devolve o texto da Annie que travou a conversa, ou None."""
+    if not msgs:
+        return None
+    ultimas = []
+    for m in reversed(msgs):  # bloco final de mensagens seguidas da Annie (ela divide em várias)
+        if m.get("sender") == "AGENT" and (m.get("content") or "").startswith("*Annie*"):
+            ultimas.append(m)
+        else:
+            break
+    if not ultimas:
+        return None
+    idade = agora - ler_iso(ultimas[0]["createdAt"])
+    if not (RETOMADA_MIN <= idade <= RETOMADA_MAX):
+        return None
+    texto = " ".join((m.get("content") or "") for m in reversed(ultimas))
+    sa = sem_acento(texto)
+    if "?" in texto or any(sem_acento(e) in sa for e in ENCERRAMENTOS):
+        return None
+    recentes = [m for m in msgs if agora - ler_iso(m["createdAt"]) <= timedelta(minutes=30)]
+    if any(MARCA_RETOMADA in (m.get("content") or "") for m in recentes):
+        return None
+    return texto
+
+
+def retomar_conversas(zaia, agora, contagem):
+    inicio = (agora - RETOMADA_MAX - timedelta(minutes=2)).astimezone(timezone.utc)
+    lista = zaia.chamar("listar_conversas", limit=30, periodo={
+        "inicio": inicio.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "fim": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")})
+    for at in (lista or {}).get("atendimentos", []):
+        conv = at.get("conversa") or {}
+        tel = (at.get("phone") or "").strip()
+        if conv.get("status") != "OPEN" or not tel or tel in EQUIPE:
+            continue  # ASSIGNED = humano atendendo; CLOSED = encerrada
+        msgs = zaia.chamar("ler_conversa", conversaId=conv["id"]).get("messages", [])
+        msgs = sorted(msgs, key=lambda m: m["createdAt"])
+        if not precisa_retomar(msgs, agora):
+            continue
+        nome = primeiro_nome((at.get("contact") or {}).get("name") or at.get("name") or "")
+        texto = (f"{nome + ', ' if nome else ''}{MARCA_RETOMADA}, pode me responder a última "
+                 "pergunta ou me contar o que mais aconteceu no seu caso?")
+        contagem["retomadas"] += 1
+        if DRY_RUN:
+            log("[simulação] conversa parada sem pergunta — mandaria retomada")
+            continue
+        quando = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:00.000Z")
+        zaia.chamar("agendar_mensagem", contatoId=(at.get("contact") or {}).get("id"), conversaId=conv["id"],
+                    mensagem=texto, dataHora=quando, assinatura="ia", ativarIaAoResponder=True)
+        log("conversa parada sem pergunta — retomada agendada")
+
+
 # ---------------------------------------------------------------- principal
 def main():
     agora = datetime.now(BRT)
@@ -738,9 +802,14 @@ def main():
         log("EasyJur: próximos 2 horários da Dra. Danielle: "
             + "; ".join(texto_slot(s) for s in manha_e_tarde(livres)))
 
-    contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0}
+    contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0,
+                "retomadas": 0}
     ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
     confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem)
+    try:
+        retomar_conversas(zaia, agora, contagem)
+    except Exception as erro:  # a retomada nunca pode derrubar a oferta
+        log(f"retomada falhou: {type(erro).__name__}: {erro}")
     log(f"resumo: {contagem}")
 
 

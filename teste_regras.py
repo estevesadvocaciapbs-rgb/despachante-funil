@@ -127,3 +127,25 @@ grupo_ag = {"mensagens": [{"sender": "CONTACT", "content": "AGENDAR Faby"}]}
 assert d.liberado_pelo_grupo({"nome": "Faby Aguiar", "tel": "5594900000088"}, grupo_ag)
 assert not d.liberado_pelo_grupo({"nome": "Maria", "tel": "5594900000077"}, grupo_ag)
 print("OK — viabilidade conferida")
+
+# ---- retomada de conversa parada (caso Júlia, 02/10)
+AGR = datetime(2026, 10, 3, 0, 19, 0, tzinfo=d.timezone.utc)
+julia = [
+    {"sender": "CONTACT", "content": "Registro com ponto eletrônico", "createdAt": "2026-10-03T00:14:57.000Z"},
+    {"sender": "AGENT", "content": "*Annie*:\nA senhora registra a jornada por ponto eletrônico. Isso é uma informação "
+     "importante para o seu caso.", "createdAt": "2026-10-03T00:15:48.003Z"},
+]
+assert d.precisa_retomar(julia, AGR), "Júlia parada há 3 min sem pergunta: deve retomar"
+assert not d.precisa_retomar(julia, datetime(2026, 10, 3, 0, 16, 30, tzinfo=d.timezone.utc)), "cedo demais"
+com_pergunta = julia[:1] + [{"sender": "AGENT", "content": "*Annie*:\nE qual é a média do seu salário?",
+                             "createdAt": "2026-10-03T00:15:48.003Z"}]
+assert not d.precisa_retomar(com_pergunta, AGR)
+encerrou = julia[:1] + [{"sender": "AGENT", "content": "*Annie*:\nPerfeito! A equipe vai te chamar por aqui para "
+                         "combinar o horário.", "createdAt": "2026-10-03T00:15:48.003Z"}]
+assert not d.precisa_retomar(encerrou, AGR)
+respondeu = julia + [{"sender": "CONTACT", "content": "R$ 4.000", "createdAt": "2026-10-03T00:17:00.000Z"}]
+assert not d.precisa_retomar(respondeu, AGR), "cliente já respondeu"
+ja = julia + [{"sender": "USER", "content": "*Annie*:\nJúlia, " + d.MARCA_RETOMADA + ", pode...?",
+               "createdAt": "2026-10-03T00:18:00.000Z"}]
+assert not d.precisa_retomar(ja, AGR)
+print("OK — retomada conferida")
