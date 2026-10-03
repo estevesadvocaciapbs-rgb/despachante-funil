@@ -213,6 +213,8 @@ def classificar(texto):
     sa_todo = sem_acento(texto)
     if "atendimento incompleto" in sa_todo:
         return None, "incompleto"
+    if "violencia domestica" in sa_todo:  # vem marcado "URGENTE", mas recebe horário na hora
+        return "vd", None
     if "urgente" in sa_todo:
         return None, "urgente"
     linha = re.search(r"(?:area:|novo lead\s*[·\-—]+)\s*([^\n*]+)", sa_todo)

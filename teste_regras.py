@@ -149,3 +149,10 @@ ja = julia + [{"sender": "USER", "content": "*Annie*:\nJúlia, " + d.MARCA_RETOM
                "createdAt": "2026-10-03T00:18:00.000Z"}]
 assert not d.precisa_retomar(ja, AGR)
 print("OK — retomada conferida")
+
+# ---- violência doméstica marcada "URGENTE" recebe horário (não é pulada)
+vd = "⚠️ URGENTE · Família — Violência Doméstica\n‼️NOVA OPORTUNIDADE‼️\nÁREA: Família — Violência Doméstica"
+assert d.classificar(vd) == ("vd", None), d.classificar(vd)
+crim = "🚨 URGENTE · Criminal — Fulano\nÁREA: Criminal\nURGÊNCIA: preso agora"
+assert d.classificar(crim)[1] == "urgente"
+print("OK — violência doméstica e criminal urgente")
