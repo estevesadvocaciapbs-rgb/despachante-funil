@@ -38,7 +38,6 @@ EASYJUR_URL = "https://api.easyjur.com/mcp"
 GRUPO = "claude-grupo-1"
 BRT = timezone(timedelta(hours=-3))
 DRY_RUN = "--dry-run" in sys.argv
-THALYTA = 354290
 
 DANIELLE = {"id": 344269, "nome": "A Dra. Danielle Esteves", "curto": "Dra. Danielle Esteves",
             "inicios": ["10:00", "10:30", "11:00", "14:00", "14:30", "15:00",
@@ -682,11 +681,11 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F", celular=tel,
                                         tipos=["lead"]))
         oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
-                          status="1", responsavel=adv["id"], responsavel2=THALYTA, cliente=pessoa_id,
+                          status="1", responsavel=adv["id"], cliente=pessoa_id,
                           data_atendimento=inicio.date().isoformat(), descricao=resumo)
         oport_id = id_de(oport)
         fim = inicio + timedelta(minutes=DURACAO_MIN)
-        ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"], id_advogado2=THALYTA,
+        ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
                   cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
                   data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
                   local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
