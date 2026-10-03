@@ -713,7 +713,8 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
 # minutos o despachante manda, em nome da Annie, uma pergunta curta de retomada; quando
 # a pessoa responde, a Annie volta a conduzir o roteiro.
 MARCA_RETOMADA = "para eu dar sequência ao seu atendimento"
-RETOMADA_MIN, RETOMADA_MAX = timedelta(minutes=2), timedelta(minutes=15)
+# silêncio de ~2 min dispara; checagem a cada minuto + envio no minuto seguinte = chega em 2–3 min
+RETOMADA_MIN, RETOMADA_MAX = timedelta(seconds=100), timedelta(minutes=4)
 ENCERRAMENTOS = ("equipe vai", "vai te chamar", "vai chamar", "entrará em contato", "entraremos em contato",
                  "retorna pra marcar", "ficou marcado", "avaliação", "avaliacao", "g.page", "google",
                  "até logo", "ate logo", "tenha um", "bom descanso", "disponha")
