@@ -1,0 +1,32 @@
+name: Vigia do plantão
+
+# A cada 10 minutos confere se existe um plantão do despachante rodando ou na fila.
+# Se não houver (ex.: o GitHub derrubou o plantão com erro interno), liga um novo.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  vigiar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Religar o plantão se estiver parado
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          ativos=0
+          for st in in_progress queued pending waiting requested; do
+            n=$(gh run list --repo "$REPO" --workflow despachante.yml --status "$st" --json databaseId --jq 'length')
+            ativos=$((ativos + n))
+          done
+          echo "plantões ativos ou na fila: $ativos"
+          if [ "$ativos" -eq 0 ]; then
+            gh workflow run despachante.yml --repo "$REPO" -f simulacao=false
+            echo "plantão religado"
+          fi

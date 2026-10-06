@@ -3,8 +3,8 @@ name: Despachante do funil
 on:
   schedule:
     # Plantão 24 horas. Cada plantão dura até 5h50 e confere a Za.Ia a cada 60 s.
-    # O disparo é de hora em hora: enquanto um plantão roda, o próximo fica na fila
-    # e entra assim que o anterior termina (sem buraco entre eles).
+    # Ao terminar (ou falhar), o próprio plantão chama o próximo; o "Vigia do plantão"
+    # religa se o GitHub derrubar tudo. Este agendamento é só mais uma garantia.
     - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
@@ -16,6 +16,10 @@ on:
 concurrency:
   group: despachante
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   despachar:
@@ -38,3 +42,8 @@ jobs:
           else
             python despachante.py --vigia
           fi
+      - name: Chamar o próximo plantão
+        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.simulacao) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run despachante.yml --repo "${{ github.repository }}" -f simulacao=false
