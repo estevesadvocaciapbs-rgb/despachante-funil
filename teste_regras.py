@@ -166,3 +166,41 @@ bate = [s for s in d.RE_SLOT.findall(conf_h) if s in ofertados]
 assert bate == [("07", "10", "12", "30")], bate
 assert len([s for s in d.RE_SLOT.findall(oferta_h) if s in ofertados]) == 2  # repetir a oferta não confirma
 print("OK — confirmação pelo horário citado")
+
+# ---- atendimento concluído no EasyJur encerra a conversa na Za.Ia (caso Marcos Farias, 06/10)
+class FakeZ:
+    def __init__(self, msgs, status="OPEN"):
+        self.msgs, self.status, self.encerradas = msgs, status, []
+    def chamar(self, f, **a):
+        if f == "buscar_contatos":
+            return {"contatos": [{"name": "Marcos Farias", "phone": "5594900000077"}]}
+        if f == "buscar_conversa_por_telefone":
+            return {"conversa": {"id": "c1", "status": self.status, "contact": {"name": "Marcos Farias"}}}
+        if f == "ler_conversa":
+            return {"messages": self.msgs}
+        if f == "encerrar_conversa":
+            self.encerradas.append(a["conversaId"])
+        return {}
+
+class FakeEJC:
+    def chamar(self, f, **a):
+        if f == "get_pessoa":
+            return {"data": {"celular": ""}}
+        if a.get("id_responsavel_qualquer") == d.LUCAS["id"]:
+            return {"data": [{"id": 1, "cliente": 9, "nome_cliente": "Marcos Farias", "data": "2026-10-05",
+                              "hora_fim": "15:00", "status": "C", "descricao": "Revisão de financiamento"}]}
+        return {"data": []}
+
+def rodar(z):
+    d._concluidos.update(ultima=None, feitos=set())
+    d.DRY_RUN = False
+    c = {"encerradas": 0}
+    d.encerrar_concluidos(z, lambda: FakeEJC(), datetime(2026, 10, 6, 15, 30, tzinfo=d.BRT), c)
+    return c["encerradas"]
+
+antes = [{"sender": "USER", "content": "link do Meet", "createdAt": "2026-10-05T17:27:00.000Z"}]
+z = FakeZ(antes); assert rodar(z) == 1 and z.encerradas == ["c1"]
+z = FakeZ(antes, status="CLOSED"); assert rodar(z) == 0
+esperando = antes + [{"sender": "CONTACT", "content": "e o contrato?", "createdAt": "2026-10-06T12:00:00.000Z"}]
+z = FakeZ(esperando); assert rodar(z) == 0 and not z.encerradas, "cliente esperando resposta"
+print("OK — concluído no EasyJur encerra a conversa")

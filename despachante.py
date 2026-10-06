@@ -779,6 +779,76 @@ def retomar_conversas(zaia, agora, contagem):
         log("conversa parada sem pergunta — retomada agendada")
 
 
+# ---------------------------------------------------------------- etapa 4: atendimento concluído
+# Atendimento marcado como Concluído no EasyJur = a reunião aconteceu. O despachante encerra a
+# conversa do cliente na Za.Ia (não manda mensagem nenhuma ao cliente). Não encerra se a última
+# mensagem da conversa for do cliente depois da reunião: ele está esperando resposta.
+CONCLUIDOS_A_CADA = timedelta(minutes=10)
+CONCLUIDOS_JANELA_D = 3
+RE_TEL = re.compile(r"\b55\d{10,11}\b")
+_concluidos = {"ultima": None, "feitos": set()}
+
+
+def telefone_do_atendimento(ej, zaia, item):
+    achado = RE_TEL.search(item.get("descricao") or "")
+    if achado:
+        return achado.group(0)
+    if item.get("cliente"):
+        p = (ej.chamar("get_pessoa", pessoa_id=item["cliente"]) or {}).get("data") or {}
+        for campo in ("celular", "celular2", "telefone", "telefone2"):
+            dig = re.sub(r"\D", "", p.get(campo) or "")
+            if len(dig) in (10, 11):
+                dig = "55" + dig
+            if len(dig) in (12, 13):
+                return dig
+    nome = (item.get("nome_cliente") or "").strip()
+    if not nome:
+        return None
+    r = zaia.chamar("buscar_contatos", query=nome, limit=5) or {}
+    iguais = [c for c in r.get("contatos", r.get("contacts", [])) if
+              sem_acento((c.get("name") or c.get("nome") or "").strip()) == sem_acento(nome) and
+              (c.get("phone") or c.get("telefone"))]
+    if len(iguais) == 1:  # nome repetido = não arrisca
+        return iguais[0].get("phone") or iguais[0].get("telefone")
+    return None
+
+
+def encerrar_concluidos(zaia, easyjur_fn, agora, contagem):
+    if _concluidos["ultima"] and agora - _concluidos["ultima"] < CONCLUIDOS_A_CADA:
+        return
+    _concluidos["ultima"] = agora
+    ej = easyjur_fn()
+    desde = (agora - timedelta(days=CONCLUIDOS_JANELA_D)).date().isoformat()
+    for adv in (DANIELLE, LUCAS, FERNANDA):
+        r = ej.chamar("list_agenda", id_responsavel_qualquer=adv["id"], tipo="ATENDIMENTO", status="C",
+                      data_conclusao_inicio=desde, page_size=50)
+        for item in (r or {}).get("data", []):
+            if item["id"] in _concluidos["feitos"]:
+                continue
+            tel = telefone_do_atendimento(ej, zaia, item)
+            if not tel or tel in EQUIPE:
+                _concluidos["feitos"].add(item["id"])
+                continue
+            conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=tel) or {}).get("conversa")
+            if not conv or conv.get("status") == "CLOSED":
+                _concluidos["feitos"].add(item["id"])
+                continue
+            fim = datetime.fromisoformat(f"{item['data']}T{(item.get('hora_fim') or '23:59')[:5]}").replace(tzinfo=BRT)
+            msgs = sorted(zaia.chamar("ler_conversa", conversaId=conv["id"]).get("messages", []),
+                          key=lambda m: m["createdAt"])
+            if msgs and msgs[-1].get("sender") == "CONTACT" and ler_iso(msgs[-1]["createdAt"]) > fim:
+                continue  # cliente escreveu depois da reunião e espera resposta: fica aberta
+            nome = conv.get("contact", {}).get("name") or item.get("nome_cliente") or ""
+            contagem["encerradas"] += 1
+            if DRY_RUN:
+                log(f"[simulação] atendimento concluído no EasyJur — encerraria a conversa de {nome}")
+                continue
+            zaia.chamar("encerrar_conversa", conversaId=conv["id"],
+                        motivo=f"Atendimento de {item['data']} concluído no EasyJur ({adv['curto']})")
+            _concluidos["feitos"].add(item["id"])
+            log("atendimento concluído no EasyJur — conversa encerrada na Za.Ia")
+
+
 # ---------------------------------------------------------------- principal
 def main():
     agora = datetime.now(BRT)
@@ -811,13 +881,17 @@ def main():
             + "; ".join(texto_slot(s) for s in manha_e_tarde(livres)))
 
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0,
-                "retomadas": 0}
+                "retomadas": 0, "encerradas": 0}
     ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
     confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem)
     try:
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta
         log(f"retomada falhou: {type(erro).__name__}: {erro}")
+    try:
+        encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
+    except Exception as erro:
+        log(f"encerramento de concluídos falhou: {type(erro).__name__}: {erro}")
     log(f"resumo: {contagem}")
 
 
