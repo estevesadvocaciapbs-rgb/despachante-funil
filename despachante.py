@@ -634,15 +634,21 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         if not ofertas:
             continue
         txt = ofertas[-1]["content"]
-        conf = [m for m in msgs if m.get("sender") == "AGENT" and MARCA_CONFIRMACAO in (m.get("content") or "")
-                and m["createdAt"] >= ofertas[-1]["createdAt"]]
+        # Confirmação = mensagem da Annie, depois da oferta, que repete um dos horários oferecidos
+        # (ela nem sempre usa "ficou marcado para"; ex.: "O atendimento ... será amanhã, quarta-feira,
+        # 07/10, às 12h30").
+        ofertados = set(RE_SLOT.findall(txt))
+        conf = []
+        for m in msgs:
+            if m.get("sender") != "AGENT" or m["createdAt"] < ofertas[-1]["createdAt"]:
+                continue
+            batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
+            if len(batem) == 1:  # citar os dois horários de novo não é confirmação
+                conf.append((m, batem[0]))
         if not conf:
             continue
-        ultima = conf[-1]["content"]
-        achado = RE_SLOT.search(ultima.split(MARCA_CONFIRMACAO, 1)[1])
-        if not achado:
-            continue
-        inicio = data_do_texto(*achado.groups(), agora)
+        ultima = conf[-1][0]["content"]
+        inicio = data_do_texto(*conf[-1][1], agora)
         if inicio < agora:
             continue
         adv = advogado_do_texto(ultima) if any(n in ultima for n in ("Danielle", "Fernanda", "Lucas"))             else advogado_do_texto(txt)

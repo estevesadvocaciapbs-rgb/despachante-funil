@@ -156,3 +156,13 @@ assert d.classificar(vd) == ("vd", None), d.classificar(vd)
 crim = "🚨 URGENTE · Criminal — Fulano\nÁREA: Criminal\nURGÊNCIA: preso agora"
 assert d.classificar(crim)[1] == "urgente"
 print("OK — violência doméstica e criminal urgente")
+
+# ---- confirmação sem "ficou marcado para" (caso Heldda, 06/10)
+oferta_h = ("Olá, Heldda! O Dr. Lucas analisou o seu caso e pode te atender por videochamada. Tenho estes horários: "
+            "1) quarta-feira, 07/10, às 12h30; 2) quinta-feira, 08/10, às 10h30. Qual fica melhor pra você?")
+ofertados = set(d.RE_SLOT.findall(oferta_h))
+conf_h = "*Annie*:\nPerfeito, Heldda Kennya! O atendimento com o Dr. Lucas será amanhã, quarta-feira, 07/10, às 12h30, por videochamada."
+bate = [s for s in d.RE_SLOT.findall(conf_h) if s in ofertados]
+assert bate == [("07", "10", "12", "30")], bate
+assert len([s for s in d.RE_SLOT.findall(oferta_h) if s in ofertados]) == 2  # repetir a oferta não confirma
+print("OK — confirmação pelo horário citado")
