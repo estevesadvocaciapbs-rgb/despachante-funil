@@ -443,7 +443,13 @@ def data_do_texto(dd, mm, hh, mi, agora):
     return datetime(ano, int(mm), int(dd), int(hh), int(mi), tzinfo=BRT)
 
 
+def sem_assinatura(txt):
+    """Tira a linha de assinatura do topo ("*Annie*:", "*Dra Danielle Esteves*:" ...)."""
+    return re.sub(r"^(\s*\*[^*\n]{1,40}\*:?\s*\n)+", "", txt or "")
+
+
 def advogado_do_texto(txt):
+    txt = sem_assinatura(txt)
     return DANIELLE if "Danielle" in txt else FERNANDA if "Fernanda" in txt else LUCAS
 
 
@@ -625,7 +631,10 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
 
 
 # ---------------------------------------------------------------- etapa 2: confirmação
-def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, contagem):
+_conflitos_avisados = set()
+
+
+def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, contagem, grupo=None):
     for lead in leads:
         conv, msgs = conversas.de(lead["tel"])
         if not conv:
@@ -642,6 +651,8 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         for m in msgs:
             if m.get("sender") != "AGENT" or m["createdAt"] < ofertas[-1]["createdAt"]:
                 continue
+            if not (m.get("content") or "").startswith("*Annie*"):
+                continue  # mensagem de advogado/rotina citando o horário não é a escolha do cliente
             batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
             if len(batem) == 1:  # citar os dois horários de novo não é confirmação
                 conf.append((m, batem[0]))
@@ -651,7 +662,9 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         inicio = data_do_texto(*conf[-1][1], agora)
         if inicio < agora:
             continue
-        adv = advogado_do_texto(ultima) if any(n in ultima for n in ("Danielle", "Fernanda", "Lucas"))             else advogado_do_texto(txt)
+        corpo = sem_assinatura(ultima)
+        adv = advogado_do_texto(corpo) if any(n in corpo for n in ("Danielle", "Fernanda", "Lucas")) \
+            else advogado_do_texto(txt)
         contato_id, conv_id = conv["contact"]["id"], conv["id"]
         nome = (conv["contact"].get("name") or lead["nome"]).strip()
         tel = lead["tel"]
@@ -666,6 +679,11 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         area, _ = classificar(lead.get("texto", ""))
         resumo = resumo_do_caso(lead.get("texto", "")) or "ver a conversa no WhatsApp."
         if inicio not in livres:
+            avisado = any("CONFLITO DE AGENDA" in (m.get("content") or "") and tel in (m.get("content") or "")
+                          for m in (grupo or {}).get("mensagens", []))
+            if avisado or tel in _conflitos_avisados:
+                continue  # avisa uma vez só
+            _conflitos_avisados.add(tel)
             if not DRY_RUN:
                 zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
                     f"⚠️ *CONFLITO DE AGENDA — {nome} ({tel})*\nEscolheu {texto_slot(inicio)} com "
@@ -883,7 +901,7 @@ def main():
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0,
                 "retomadas": 0, "encerradas": 0}
     ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
-    confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem)
+    confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
     try:
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta
