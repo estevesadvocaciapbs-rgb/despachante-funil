@@ -45,8 +45,8 @@ DANIELLE = {"id": 344269, "nome": "A Dra. Danielle Esteves", "curto": "Dra. Dani
 FERNANDA = {"id": 378457, "nome": "A Dra. Fernanda Mesquita", "curto": "Dra. Fernanda Mesquita",
             "inicios": ["09:30", "14:30"], "bloqueia_dia_audiencia": True}
 LUCAS = {"id": 344268, "nome": "O Dr. Lucas", "curto": "Dr. Lucas",
-         "inicios": ["10:30", "11:00", "11:30", "12:00", "12:30", "13:00",
-                     "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]}
+         # sem almoço: manhã até 11h30 (termina 12h), tarde a partir das 14h
+         "inicios": ["10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]}
 ADVOGADOS = [DANIELLE, FERNANDA, LUCAS]
 
 TIPOS_QUE_OCUPAM = {"ATENDIMENTO", "AUDIENCIA", "REUNIAO", "PERICIA", "DILIGENCIA",
