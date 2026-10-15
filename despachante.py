@@ -668,12 +668,16 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         contato_id, conv_id = conv["contact"]["id"], conv["id"]
         nome = (conv["contact"].get("name") or lead["nome"]).strip()
         tel = lead["tel"]
+        chave = (tel, inicio.isoformat())
+        if chave in _gravadas:
+            continue  # já conferida neste plantão: não consulta o EasyJur de novo a cada minuto
 
         ej = easyjur_fn()
         agenda = agenda_fn()
         existentes = agenda.itens(adv["id"], inicio.date(), inicio.date(), tipo="ATENDIMENTO")
         if any((i.get("hora_inicio") or "")[:5] == f"{inicio:%H:%M}" and i.get("status") != "S"
                for i in existentes):
+            _gravadas.add(chave)
             continue  # já gravado (pela equipe, pelo auditor ou numa rodada anterior)
         livres = agenda.livres(adv, set())
         area, _ = classificar(lead.get("texto", ""))
@@ -714,6 +718,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                   data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
                   local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
                   f"pela Annie. {resumo}")
+        _gravadas.add(chave)
         lembrete = inicio - timedelta(hours=1)
         tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
         if lembrete - agora > timedelta(minutes=10) and not tem_pendente:
@@ -801,16 +806,27 @@ def retomar_conversas(zaia, agora, contagem):
 # Atendimento marcado como Concluído no EasyJur = a reunião aconteceu. O despachante encerra a
 # conversa do cliente na Za.Ia (não manda mensagem nenhuma ao cliente). Não encerra se a última
 # mensagem da conversa for do cliente depois da reunião: ele está esperando resposta.
-CONCLUIDOS_A_CADA = timedelta(minutes=10)
+CONCLUIDOS_A_CADA = timedelta(minutes=60)  # era 10 min: 3 consultas ao EasyJur a cada rodada estouravam a cota mensal
+CONCLUIDOS_HORAS = range(7, 20)  # só confere concluídos em horário de expediente (BRT)
 CONCLUIDOS_JANELA_D = 3
 RE_TEL = re.compile(r"\b55\d{10,11}\b")
 _concluidos = {"ultima": None, "feitos": set()}
+_tel_cache = {}  # id do atendimento -> telefone (evita repetir get_pessoa a cada rodada)
+_gravadas = set()  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
 
 
 def telefone_do_atendimento(ej, zaia, item):
     achado = RE_TEL.search(item.get("descricao") or "")
     if achado:
         return achado.group(0)
+    if item.get("id") in _tel_cache:
+        return _tel_cache[item["id"]]
+    tel = _telefone_por_pessoa(ej, zaia, item)
+    _tel_cache[item["id"]] = tel
+    return tel
+
+
+def _telefone_por_pessoa(ej, zaia, item):
     if item.get("cliente"):
         p = (ej.chamar("get_pessoa", pessoa_id=item["cliente"]) or {}).get("data") or {}
         for campo in ("celular", "celular2", "telefone", "telefone2"):
@@ -833,6 +849,8 @@ def telefone_do_atendimento(ej, zaia, item):
 
 def encerrar_concluidos(zaia, easyjur_fn, agora, contagem):
     if _concluidos["ultima"] and agora - _concluidos["ultima"] < CONCLUIDOS_A_CADA:
+        return
+    if agora.hour not in CONCLUIDOS_HORAS:
         return
     _concluidos["ultima"] = agora
     ej = easyjur_fn()
