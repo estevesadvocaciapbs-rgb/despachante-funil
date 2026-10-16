@@ -28,7 +28,22 @@ rotinas do Claude, como hoje.
    grátis. Atenção: o GitHub desliga agendamentos de repositório parado há 60
    dias; se isso acontecer, é só clicar em "Enable workflow".
 
-## Segurança
+## Segurança e privacidade
+
+O repositório é público (é o que dá minutos ilimitados e gratuitos no GitHub
+Actions). Por isso vale a regra: **nada de dado de cliente ou do escritório
+pode entrar aqui**. O que garante isso:
+
+- Os dados dos clientes nunca passam pelo GitHub. Ficam na Za.Ia, no EasyJur e
+  no Google; o programa só os lê na hora, em memória, e descarta.
+- O código e os testes não têm nome, telefone, e-mail nem caso real (os testes
+  usam nomes e números inventados).
+- O registro de execução (log) nunca escreve nome, telefone ou conteúdo de
+  conversa. Como proteção extra, qualquer sequência que pareça telefone ou
+  e-mail é mascarada automaticamente antes de sair, inclusive em mensagens de
+  erro, e cada linha é cortada em 300 caracteres.
+- Recomendado: em **Settings › Actions › General › Artifact and log retention**,
+  colocar 1 dia, para o GitHub apagar os logs antigos sozinho.
 
 - As chaves ficam só nos segredos do GitHub; o código não guarda nenhuma.
 - O registro de execução (log) não mostra nome, telefone nem conversa de cliente.

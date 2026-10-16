@@ -157,25 +157,25 @@ crim = "🚨 URGENTE · Criminal — Fulano\nÁREA: Criminal\nURGÊNCIA: preso a
 assert d.classificar(crim)[1] == "urgente"
 print("OK — violência doméstica e criminal urgente")
 
-# ---- confirmação sem "ficou marcado para" (caso Heldda, 06/10)
-oferta_h = ("Olá, Heldda! O Dr. Lucas analisou o seu caso e pode te atender por videochamada. Tenho estes horários: "
+# ---- confirmação sem "ficou marcado para" (caso real de 06/10, nome trocado)
+oferta_h = ("Olá, Helena! O Dr. Lucas analisou o seu caso e pode te atender por videochamada. Tenho estes horários: "
             "1) quarta-feira, 07/10, às 12h30; 2) quinta-feira, 08/10, às 10h30. Qual fica melhor pra você?")
 ofertados = set(d.RE_SLOT.findall(oferta_h))
-conf_h = "*Annie*:\nPerfeito, Heldda Kennya! O atendimento com o Dr. Lucas será amanhã, quarta-feira, 07/10, às 12h30, por videochamada."
+conf_h = "*Annie*:\nPerfeito, Helena Souza! O atendimento com o Dr. Lucas será amanhã, quarta-feira, 07/10, às 12h30, por videochamada."
 bate = [s for s in d.RE_SLOT.findall(conf_h) if s in ofertados]
 assert bate == [("07", "10", "12", "30")], bate
 assert len([s for s in d.RE_SLOT.findall(oferta_h) if s in ofertados]) == 2  # repetir a oferta não confirma
 print("OK — confirmação pelo horário citado")
 
-# ---- atendimento concluído no EasyJur encerra a conversa na Za.Ia (caso Marcos Farias, 06/10)
+# ---- atendimento concluído no EasyJur encerra a conversa na Za.Ia (caso real de 06/10, nome trocado)
 class FakeZ:
     def __init__(self, msgs, status="OPEN"):
         self.msgs, self.status, self.encerradas = msgs, status, []
     def chamar(self, f, **a):
         if f == "buscar_contatos":
-            return {"contatos": [{"name": "Marcos Farias", "phone": "5594900000077"}]}
+            return {"contatos": [{"name": "Mateus Ferreira", "phone": "5594900000077"}]}
         if f == "buscar_conversa_por_telefone":
-            return {"conversa": {"id": "c1", "status": self.status, "contact": {"name": "Marcos Farias"}}}
+            return {"conversa": {"id": "c1", "status": self.status, "contact": {"name": "Mateus Ferreira"}}}
         if f == "ler_conversa":
             return {"messages": self.msgs}
         if f == "encerrar_conversa":
@@ -187,8 +187,8 @@ class FakeEJC:
         if f == "get_pessoa":
             return {"data": {"celular": ""}}
         if a.get("id_responsavel_qualquer") == d.LUCAS["id"]:
-            return {"data": [{"id": 1, "cliente": 9, "nome_cliente": "Marcos Farias", "data": "2026-10-05",
-                              "hora_fim": "15:00", "status": "C", "descricao": "Revisão de financiamento"}]}
+            return {"data": [{"id": 1, "cliente": 9, "nome_cliente": "Mateus Ferreira", "data": "2026-10-05",
+                              "hora_fim": "15:00", "status": "C", "descricao": "Revisão de contrato"}]}
         return {"data": []}
 
 def rodar(z):
@@ -205,8 +205,8 @@ esperando = antes + [{"sender": "CONTACT", "content": "e o contrato?", "createdA
 z = FakeZ(esperando); assert rodar(z) == 0 and not z.encerradas, "cliente esperando resposta"
 print("OK — concluído no EasyJur encerra a conversa")
 
-# ---- mensagem de advogado citando o horário não é confirmação nem muda o advogado (Heldda, 07/10)
-r4 = "*Dra Danielle Esteves*:\n*Dr. Lucas:*\nOlá, Heldda! Aqui é o Dr. Lucas. Confirmo nosso atendimento de hoje, quarta-feira, 07/10, às 12h30"
+# ---- mensagem de advogado citando o horário não é confirmação nem muda o advogado (caso de 07/10)
+r4 = "*Dra Danielle Esteves*:\n*Dr. Lucas:*\nOlá, Helena! Aqui é o Dr. Lucas. Confirmo nosso atendimento de hoje, quarta-feira, 07/10, às 12h30"
 assert not r4.startswith("*Annie*")
 assert d.advogado_do_texto(r4) is d.LUCAS
 assert d.advogado_do_texto("*Annie*:\nOlá! O Dr. Lucas analisou o seu caso") is d.LUCAS

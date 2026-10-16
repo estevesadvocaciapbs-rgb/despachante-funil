@@ -111,9 +111,22 @@ def _avisar_orcamento(zaia, erro):
         log(f"não consegui avisar o grupo: {type(e).__name__}: {e}")
 
 
+# telefone cru (5594991234567) ou formatado ((94) 99123-4567); datas e horas não casam
+RE_TELEFONE_LOG = re.compile(r"\+?\d{10,13}|\(?\d{2}\)?\s?9?\d{4}[-\s]\d{4}")
+RE_EMAIL_LOG = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
 def log(msg):
-    # Nunca registra nome, telefone ou conteúdo de conversa (o log do GitHub é público).
-    print(f"[{datetime.now(BRT):%d/%m %H:%M:%S}] {msg}", flush=True)
+    """Registro de execução. O repositório é público, então o log é público.
+
+    Regra: nunca escrever nome, telefone, e-mail ou conteúdo de conversa. Como
+    mensagens de erro podem trazer trechos de resposta dos sistemas, qualquer
+    sequência que pareça telefone ou e-mail é mascarada antes de sair, e a
+    linha é cortada em 300 caracteres.
+    """
+    texto = RE_TELEFONE_LOG.sub("[tel]", str(msg))
+    texto = RE_EMAIL_LOG.sub("[e-mail]", texto)
+    print(f"[{datetime.now(BRT):%d/%m %H:%M:%S}] {texto[:300]}", flush=True)
 
 
 def sem_acento(texto):
@@ -932,7 +945,7 @@ def encerrar_concluidos(zaia, easyjur_fn, agora, contagem):
             nome = conv.get("contact", {}).get("name") or item.get("nome_cliente") or ""
             contagem["encerradas"] += 1
             if DRY_RUN:
-                log(f"[simulação] atendimento concluído no EasyJur — encerraria a conversa de {nome}")
+                log("[simulação] atendimento concluído no EasyJur — encerraria a conversa")
                 continue
             zaia.chamar("encerrar_conversa", conversaId=conv["id"],
                         motivo=f"Atendimento de {item['data']} concluído no EasyJur ({adv['curto']})")
