@@ -34,6 +34,21 @@ rotinas do Claude, como hoje.
 - O registro de execução (log) não mostra nome, telefone nem conversa de cliente.
 - Para desligar: aba Actions › "Despachante do funil" › "Disable workflow".
 
+## Consumo da API do EasyJur (cota mensal de 10.000 chamadas)
+
+- O despachante lê a Za.Ia a cada minuto, mas só chama o EasyJur quando precisa:
+  ao montar uma oferta de horários, ao gravar uma reunião confirmada e, uma vez
+  por hora (7h–19h), ao conferir atendimentos concluídos. Uso normal: ~40
+  chamadas por dia.
+- Trava de segurança: cada plantão (há 4 por dia) pode fazer no máximo
+  `EASYJUR_MAX_PLANTAO` chamadas (padrão 60, ajustável em **Settings › Secrets
+  and variables › Actions › Variables**). Passou disso, ele avisa o grupo uma
+  vez e para de usar o EasyJur até o próximo plantão; a leitura do WhatsApp
+  continua e o auditor com IA cobre o que ficar pendente.
+- Cota mensal esgotada (erro 429): ele espera 60 minutos antes de tentar de novo.
+- O resumo de cada rodada no log mostra `easyjur_no_plantao`, o total de
+  chamadas feitas no plantão.
+
 ## Regras de agenda (iguais às das rotinas)
 
 - Dra. Danielle: seg–qui, 10h00–11h00 e 14h00–17h00 (meia em meia hora).

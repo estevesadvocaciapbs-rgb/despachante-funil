@@ -66,6 +66,50 @@ MARCA_CONFIRMACAO = "ficou marcado para"
 EQUIPE = set(filter(None, os.environ.get(
     "TELEFONES_EQUIPE", "").replace(" ", "").split(",")))
 
+# ---------------------------------------------------------------- orçamento do EasyJur
+# A cota da API do EasyJur é mensal (10.000 chamadas no plano starter) e é dividida com as
+# rotinas com IA. O despachante só chama o EasyJur ao ofertar, ao gravar a reunião e, uma vez
+# por hora, ao conferir atendimentos concluídos. Este contador é uma trava contra qualquer
+# defeito que faça chamadas em excesso: passou do limite do plantão, ele continua lendo a
+# Za.Ia, mas não toca mais no EasyJur até o próximo plantão (4 plantões por dia).
+EASYJUR_MAX_PLANTAO = int(os.environ.get("EASYJUR_MAX_PLANTAO", "60"))
+EASYJUR_PAUSA_429_MIN = 60  # cota mensal esgotada (HTTP 429): espera antes de tentar de novo
+ESTADO_EJ = {"chamadas": 0, "pausado_ate": None, "avisado": False}
+
+
+class OrcamentoEasyJur(Exception):
+    """O despachante não pode chamar o EasyJur agora (limite do plantão ou cota mensal)."""
+
+
+def _registrar_chamada_easyjur():
+    """Conta uma requisição ao EasyJur; recusa antes de enviar se o orçamento acabou."""
+    pausa = ESTADO_EJ["pausado_ate"]
+    if pausa and datetime.now(BRT) < pausa:
+        raise OrcamentoEasyJur(f"EasyJur em pausa até {pausa:%H:%M} (cota mensal esgotada)")
+    if ESTADO_EJ["chamadas"] >= EASYJUR_MAX_PLANTAO:
+        raise OrcamentoEasyJur(f"limite de {EASYJUR_MAX_PLANTAO} chamadas ao EasyJur neste plantão atingido")
+    ESTADO_EJ["chamadas"] += 1
+
+
+def _pausar_easyjur_429():
+    ESTADO_EJ["pausado_ate"] = datetime.now(BRT) + timedelta(minutes=EASYJUR_PAUSA_429_MIN)
+    log(f"EasyJur: cota mensal esgotada (HTTP 429) — sem chamadas por {EASYJUR_PAUSA_429_MIN} min")
+
+
+def _avisar_orcamento(zaia, erro):
+    """Avisa o grupo uma vez por plantão que o EasyJur ficou fora do alcance do despachante."""
+    log(f"EasyJur indisponível para o despachante: {erro}")
+    if ESTADO_EJ["avisado"] or DRY_RUN:
+        return
+    ESTADO_EJ["avisado"] = True
+    try:
+        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+            f"⚠️ *DESPACHANTE — EasyJur pausado*\n{erro}. Ofertas de horário e gravação de reuniões "
+            "ficam paradas até o próximo plantão (ou até a cota voltar); a leitura do WhatsApp continua. "
+            "O auditor com IA cobre o que ficar pendente."))
+    except Exception as e:  # o aviso nunca pode derrubar a rodada
+        log(f"não consegui avisar o grupo: {type(e).__name__}: {e}")
+
 
 def log(msg):
     # Nunca registra nome, telefone ou conteúdo de conversa (o log do GitHub é público).
@@ -89,7 +133,7 @@ class MCP:
             raise SystemExit(f"Falta a variável de ambiente do token de {nome}.")
         log(f"{nome}: token com {len(token)} caracteres")
         self.url, self.token, self.nome = url, token, nome
-        self.sessao, self.seq = None, 0
+        self.sessao, self.seq, self.quebrado = None, 0, False
         self._post({"jsonrpc": "2.0", "id": self._id(), "method": "initialize",
                     "params": {"protocolVersion": "2025-03-26", "capabilities": {},
                                "clientInfo": {"name": "despachante-funil", "version": "2.0"}}})
@@ -100,6 +144,8 @@ class MCP:
         return self.seq
 
     def _post(self, corpo, espera=True):
+        if self.nome == "EasyJur":
+            _registrar_chamada_easyjur()  # conta também o initialize da sessão
         cab = {"Content-Type": "application/json",
                "Accept": "application/json, text/event-stream",
                "Authorization": f"Bearer {self.token}",
@@ -114,7 +160,14 @@ class MCP:
                 bruto = r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             detalhe = e.read().decode("utf-8", "replace")[:300].replace("\n", " ")
+            self.quebrado = True
+            if self.nome == "EasyJur" and e.code == 429:
+                _pausar_easyjur_429()
+                raise OrcamentoEasyJur("cota mensal da API do EasyJur esgotada (HTTP 429)") from None
             raise RuntimeError(f"{self.nome}: HTTP {e.code} — {detalhe}") from None
+        except (urllib.error.URLError, OSError) as e:
+            self.quebrado = True
+            raise RuntimeError(f"{self.nome}: sem conexão — {e}") from None
         if not espera or not bruto.strip():
             return None
         if bruto.lstrip().startswith("{"):
@@ -133,6 +186,7 @@ class MCP:
         resp = self._post({"jsonrpc": "2.0", "id": self._id(), "method": "tools/call",
                            "params": {"name": ferramenta, "arguments": args}})
         if not resp or "error" in resp:
+            self.quebrado = True  # sessão pode ter expirado: a próxima rodada reconecta
             raise RuntimeError(f"{self.nome}.{ferramenta}: erro na chamada")
         res = resp.get("result", {})
         if res.get("isError"):
@@ -812,7 +866,8 @@ CONCLUIDOS_JANELA_D = 3
 RE_TEL = re.compile(r"\b55\d{10,11}\b")
 _concluidos = {"ultima": None, "feitos": set()}
 _tel_cache = {}  # id do atendimento -> telefone (evita repetir get_pessoa a cada rodada)
-_gravadas = set()  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
+_gravadas = set()
+_ej_cliente = {}  # cliente MCP do EasyJur reaproveitado entre as rodadas do plantão  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
 
 
 def telefone_do_atendimento(ej, zaia, item):
@@ -900,9 +955,11 @@ def main():
     cache = {}
 
     def easyjur_fn():
-        if "ej" not in cache:
-            cache["ej"] = MCP(EASYJUR_URL, os.environ.get("EASYJUR_TOKEN"), "EasyJur")
-        return cache["ej"]
+        # Um cliente só por plantão: o initialize de sessão também conta na cota do EasyJur.
+        ej = _ej_cliente.get("ej")
+        if ej is None or ej.quebrado:
+            ej = _ej_cliente["ej"] = MCP(EASYJUR_URL, os.environ.get("EASYJUR_TOKEN"), "EasyJur")
+        return ej
 
     def agenda_fn():
         if "ag" not in cache:
@@ -918,16 +975,22 @@ def main():
 
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0,
                 "retomadas": 0, "encerradas": 0}
-    ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
-    confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
+    try:
+        ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
+        confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
+    except OrcamentoEasyJur as erro:  # sem EasyJur não dá para ofertar nem gravar; o resto segue
+        _avisar_orcamento(zaia, erro)
     try:
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta
         log(f"retomada falhou: {type(erro).__name__}: {erro}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
     except Exception as erro:
         log(f"encerramento de concluídos falhou: {type(erro).__name__}: {erro}")
+    contagem["easyjur_no_plantao"] = ESTADO_EJ["chamadas"]
     log(f"resumo: {contagem}")
 
 

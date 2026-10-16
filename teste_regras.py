@@ -204,3 +204,47 @@ z = FakeZ(antes, status="CLOSED"); assert rodar(z) == 0
 esperando = antes + [{"sender": "CONTACT", "content": "e o contrato?", "createdAt": "2026-10-06T12:00:00.000Z"}]
 z = FakeZ(esperando); assert rodar(z) == 0 and not z.encerradas, "cliente esperando resposta"
 print("OK — concluído no EasyJur encerra a conversa")
+
+# ---- mensagem de advogado citando o horário não é confirmação nem muda o advogado (Heldda, 07/10)
+r4 = "*Dra Danielle Esteves*:\n*Dr. Lucas:*\nOlá, Heldda! Aqui é o Dr. Lucas. Confirmo nosso atendimento de hoje, quarta-feira, 07/10, às 12h30"
+assert not r4.startswith("*Annie*")
+assert d.advogado_do_texto(r4) is d.LUCAS
+assert d.advogado_do_texto("*Annie*:\nOlá! O Dr. Lucas analisou o seu caso") is d.LUCAS
+assert d.advogado_do_texto("*Annie*:\nA Dra. Danielle Esteves analisou") is d.DANIELLE
+print("OK — assinatura não confunde o advogado")
+
+# ---- orçamento do EasyJur: trava por plantão e pausa após cota esgotada (15/10)
+from datetime import timedelta
+d.ESTADO_EJ.update(chamadas=0, pausado_ate=None, avisado=False)
+limite_original = d.EASYJUR_MAX_PLANTAO
+d.EASYJUR_MAX_PLANTAO = 3
+for _ in range(3):
+    d._registrar_chamada_easyjur()
+try:
+    d._registrar_chamada_easyjur()
+    assert False, "deveria recusar a 4ª chamada"
+except d.OrcamentoEasyJur as e:
+    assert "limite de 3" in str(e)
+assert d.ESTADO_EJ["chamadas"] == 3
+d.ESTADO_EJ.update(chamadas=0, pausado_ate=datetime.now(d.BRT) + timedelta(minutes=30))
+try:
+    d._registrar_chamada_easyjur()
+    assert False, "deveria estar em pausa"
+except d.OrcamentoEasyJur as e:
+    assert "pausa" in str(e)
+d.ESTADO_EJ.update(chamadas=0, pausado_ate=datetime.now(d.BRT) - timedelta(minutes=1))
+d._registrar_chamada_easyjur()  # pausa vencida: volta a chamar
+d.EASYJUR_MAX_PLANTAO = limite_original
+
+# o aviso ao grupo sai uma vez só por plantão e nunca derruba a rodada
+class FakeZAviso:
+    def __init__(self): self.enviadas = []
+    def chamar(self, f, **a):
+        self.enviadas.append(f); return {}
+d.ESTADO_EJ.update(avisado=False)
+d.DRY_RUN = False
+z = FakeZAviso()
+d._avisar_orcamento(z, d.OrcamentoEasyJur("limite de 60 chamadas ao EasyJur neste plantão atingido"))
+d._avisar_orcamento(z, d.OrcamentoEasyJur("de novo"))
+assert z.enviadas == ["enviar_mensagem_grupo"]
+print("OK — orçamento do EasyJur")
