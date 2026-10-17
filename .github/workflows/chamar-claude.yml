@@ -1,9 +1,8 @@
-name: Chamar o Claude (teste manual)
+name: Gravar sinal para o Claude (teste manual)
 
-# Dispara o evento "repository_dispatch" que acorda as rotinas do Claude ligadas a
-# este repositório. O porteiro do despachante faz a mesma chamada sozinho quando
-# chega pedido novo de advogado; este botão serve só para testar à mão.
-# O evento não leva nenhum dado de cliente: só o nome "pedido_novo".
+# Grava agora o sinal.json (ramo "sinal"), como o porteiro faz sozinho quando chega
+# pedido novo de advogado. Serve para testar se as rotinas do Claude acordam.
+# O sinal leva só a hora; nenhum dado de cliente.
 on:
   workflow_dispatch:
 
@@ -11,11 +10,15 @@ permissions:
   contents: write
 
 jobs:
-  chamar:
+  sinal:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Avisar o Claude
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Gravar sinal
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X POST "repos/${{ github.repository }}/dispatches" -f event_type=pedido_novo && echo "aviso enviado"
+        run: python -c "import porteiro, sys; sys.exit(0 if porteiro.chamar_claude() else 1)"

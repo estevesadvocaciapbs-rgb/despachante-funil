@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write   # o porteiro grava o sinal.json no ramo "sinal"
   actions: write
 
 jobs:
@@ -35,6 +35,7 @@ jobs:
           ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
           EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
           TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
+          GH_TOKEN: ${{ github.token }}
           PYTHONUNBUFFERED: "1"
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.simulacao }}" = "true" ]; then
