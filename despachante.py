@@ -1004,13 +1004,19 @@ def main():
     except Exception as erro:
         log(f"encerramento de concluídos falhou: {type(erro).__name__}: {erro}")
     if not DRY_RUN:
+        lidas = {}
         try:  # comandos de formato fixo dos advogados (LIDA, PRAZO, AGENDAR, OK 2...), sem IA
             import secretaria
-            secretaria.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), contagem)
+            lidas = secretaria.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), contagem) or {}
         except OrcamentoEasyJur as erro:
             _avisar_orcamento(zaia, erro)
         except Exception as erro:
             log(f"secretaria falhou: {type(erro).__name__}")
+        try:  # porteiro: sinaliza ao Claude só quando chega pedido novo de advogado
+            import porteiro
+            porteiro.rodada(zaia, datetime.now(timezone.utc), contagem, conversas_lidas=lidas)
+        except Exception as erro:
+            log(f"porteiro falhou: {type(erro).__name__}")
     contagem["easyjur_no_plantao"] = ESTADO_EJ["chamadas"]
     log(f"resumo: {contagem}")
 

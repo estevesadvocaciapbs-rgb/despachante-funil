@@ -65,6 +65,18 @@ com IA. Cada comando é executado uma vez: a resposta leva a marca `#número` da
 mensagem do comando. Áudio não é tratado aqui. Só baixa a conversa inteira
 quando chegou mensagem nova (confere antes a hora da última mensagem).
 
+## Porteiro (`porteiro.py`)
+
+Também no plantão, a cada 2 minutos. Olha o privado dos 3 advogados e os grupos
+"Firma 2026" e "AUTOMAÇÃO Firma". Quando chega pedido novo de advogado que a
+secretaria sem IA não resolve (texto livre, OK S3, EDITAR R2, comprovante,
+áudio), grava a hora no arquivo `sinal.json` do ramo `sinal` (só a hora, sem
+nenhum dado). As rotinas do Claude "Secretário geral" e "Respostas pelo grupo"
+leem esse arquivo no primeiro passo e encerram na hora se não houver pedido
+novo; assim a rodada vazia quase não gasta. Em grupo, só conta mensagem de
+advogado dirigida ao sistema (verbo de ordem, código ou menção ao assistente).
+Teste manual: Actions › "Gravar sinal para o Claude (teste manual)" › Run workflow.
+
 ## Consumo da API do EasyJur (cota mensal de 10.000 chamadas)
 
 - O despachante lê a Za.Ia a cada minuto, mas só chama o EasyJur quando precisa:

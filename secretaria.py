@@ -508,8 +508,9 @@ def rodada(zaia, ej_fn, agora=None, contagem=None):
     """Chamada pelo despachante a cada minuto; trabalha no máximo a cada 2 minutos."""
     agora = agora or datetime.now(timezone.utc)
     contagem = contagem if contagem is not None else {}
+    lidas = {}  # telefone -> mensagens baixadas nesta rodada (o porteiro reaproveita)
     if _estado["ultima"] and agora - _estado["ultima"] < INTERVALO:
-        return
+        return lidas
     _estado["ultima"] = agora
     for adv, tarefa in [(a, "resumo") for a in ADVOGADAS_RESUMO] + [(DR_LUCAS, "lucas")]:
         try:
@@ -521,6 +522,7 @@ def rodada(zaia, ej_fn, agora=None, contagem=None):
                 continue  # nada novo desde a última leitura: não baixa a conversa inteira
             msgs = sorted((zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []),
                           key=lambda x: x["createdAt"])
+            lidas[adv["tel"]] = msgs
             if tarefa == "resumo":
                 comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem)
             else:
@@ -530,3 +532,4 @@ def rodada(zaia, ej_fn, agora=None, contagem=None):
             if type(erro).__name__ == "OrcamentoEasyJur":
                 raise
             _log(f"falhou ({adv['chave']}): {type(erro).__name__}")
+    return lidas
