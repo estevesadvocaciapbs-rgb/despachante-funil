@@ -49,6 +49,22 @@ pode entrar aqui**. O que garante isso:
 - O registro de execução (log) não mostra nome, telefone nem conversa de cliente.
 - Para desligar: aba Actions › "Despachante do funil" › "Disable workflow".
 
+## Secretaria sem IA (`secretaria.py`)
+
+Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA:
+
+- **Comandos do resumo matinal** (Dra. Fernanda e Dra. Danielle, no privado do
+  escritório): `LIDA 1 3 A2`, `LIDA TODAS`, `MANTER 2`, `PRAZO 2 13/10 texto`,
+  `TAREFA 4 05/10 texto`, `AGENDAR 10/10 14h assunto`, `MINHA AGENDA`,
+  `AGENDA Lucas`. PRAZO cria a data interna 2 dias úteis antes da fatal.
+- **Aprovações do relatório de pendências do Dr. Lucas**: `OK 2`, `OK 1 3`,
+  `OK TODAS`, `EDITAR 2: texto`, `NÃO 2`.
+
+Só entende esses formatos exatos; qualquer outra frase fica para o assistente
+com IA. Cada comando é executado uma vez: a resposta leva a marca `#número` da
+mensagem do comando. Áudio não é tratado aqui. Só baixa a conversa inteira
+quando chegou mensagem nova (confere antes a hora da última mensagem).
+
 ## Consumo da API do EasyJur (cota mensal de 10.000 chamadas)
 
 - O despachante lê a Za.Ia a cada minuto, mas só chama o EasyJur quando precisa:

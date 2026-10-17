@@ -879,8 +879,8 @@ CONCLUIDOS_JANELA_D = 3
 RE_TEL = re.compile(r"\b55\d{10,11}\b")
 _concluidos = {"ultima": None, "feitos": set()}
 _tel_cache = {}  # id do atendimento -> telefone (evita repetir get_pessoa a cada rodada)
-_gravadas = set()
-_ej_cliente = {}  # cliente MCP do EasyJur reaproveitado entre as rodadas do plantão  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
+_gravadas = set()  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
+_ej_cliente = {}  # cliente MCP do EasyJur reaproveitado entre as rodadas do plantão
 
 
 def telefone_do_atendimento(ej, zaia, item):
@@ -1003,6 +1003,14 @@ def main():
         _avisar_orcamento(zaia, erro)
     except Exception as erro:
         log(f"encerramento de concluídos falhou: {type(erro).__name__}: {erro}")
+    if not DRY_RUN:
+        try:  # comandos de formato fixo dos advogados (LIDA, PRAZO, AGENDAR, OK 2...), sem IA
+            import secretaria
+            secretaria.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), contagem)
+        except OrcamentoEasyJur as erro:
+            _avisar_orcamento(zaia, erro)
+        except Exception as erro:
+            log(f"secretaria falhou: {type(erro).__name__}")
     contagem["easyjur_no_plantao"] = ESTADO_EJ["chamadas"]
     log(f"resumo: {contagem}")
 
