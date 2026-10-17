@@ -1,0 +1,21 @@
+name: Chamar o Claude (teste manual)
+
+# Dispara o evento "repository_dispatch" que acorda as rotinas do Claude ligadas a
+# este repositório. O porteiro do despachante faz a mesma chamada sozinho quando
+# chega pedido novo de advogado; este botão serve só para testar à mão.
+# O evento não leva nenhum dado de cliente: só o nome "pedido_novo".
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  chamar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Avisar o Claude
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/dispatches" -f event_type=pedido_novo && echo "aviso enviado"
