@@ -750,7 +750,241 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
 _conflitos_avisados = set()
 
 
+LEMBRETE_MANHA_H = 8  # lembrete no começo do dia do atendimento (além do de 1 hora antes)
+
+
+def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora):
+    """Agenda os lembretes ao cliente: 8h do dia (se a reunião for às 10h ou depois) e 1 hora antes."""
+    quem = f"{adv['nome'][0].lower()}{adv['nome'][1:]}"
+    hora = f"{inicio:%H}h{inicio:%M}"
+    pn = primeiro_nome(nome)
+    um_h = inicio - timedelta(hours=1)
+    manha = inicio.replace(hour=LEMBRETE_MANHA_H, minute=0, second=0, microsecond=0)
+    agendados = []
+    # reunião antes das 10h: o lembrete de 1 hora antes já cai no começo do dia; não manda dois seguidos
+    if inicio.hour >= 10 and manha - agora > timedelta(minutes=10):
+        zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
+                    dataHora=manha.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
+                    assinatura="ia", ativarIaAoResponder=True, mensagem=(
+                        f"Bom dia, {pn}! Passando para lembrar do seu atendimento de hoje, às {hora}, com {quem}, "
+                        "por videochamada. Uma hora antes eu te mando outro lembrete. Até mais tarde!"))
+        agendados.append("8h")
+    if um_h - agora > timedelta(minutes=10):
+        zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
+                    dataHora=um_h.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
+                    assinatura="ia", ativarIaAoResponder=True, mensagem=(
+                        f"Olá, {pn}! Passando para confirmar nosso atendimento de hoje às {hora} com {quem}. "
+                        "Podemos confirmar sua presença?"))
+        agendados.append("1h antes")
+    return agendados
+
+
+def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendentes, agora, contagem, chave,
+                   origem, marca=""):
+    """Grava pessoa, oportunidade e ATENDIMENTO no EasyJur, agenda os lembretes e avisa o grupo.
+
+    Devolve True se gravou. Se o EasyJur recusar, avisa o grupo uma vez e não tenta de novo sozinho.
+    """
+    try:
+        pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
+        mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
+                 and (p.get("celular") or "").replace(" ", "") in ("", tel, tel[2:])]
+        if len(mesma) == 1:
+            pessoa_id = mesma[0]["id"]
+        else:
+            pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F", celular=tel,
+                                        tipos=["lead"]))
+        oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
+                          status="1", responsavel=adv["id"], cliente=pessoa_id,
+                          data_atendimento=inicio.date().isoformat(), descricao=resumo)
+        oport_id = id_de(oport)
+        fim = inicio + timedelta(minutes=DURACAO_MIN)
+        ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
+                  cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
+                  data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
+                  local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
+                  f"({origem}). {resumo}")
+    except OrcamentoEasyJur:
+        raise
+    except Exception as erro:
+        # Não tenta de novo a cada minuto (caso Hana, 18/10: gastou a cota do plantão repetindo o erro).
+        _falhas.add(chave)
+        log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
+        motivo = re.sub(r"^\S+: ", "", str(erro))[:140]
+        if not DRY_RUN:
+            zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+                f"⚠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
+                f"{origem}: {texto_slot(inicio)} com {adv['curto']}, mas o EasyJur recusou a gravação "
+                f"({motivo}).\n👉 Equipe: gravar à mão no EasyJur e conferir o lembrete. "
+                f"Não vou tentar de novo sozinho.{marca}"))
+        return False
+    _gravadas.add(chave)
+    contato_id, conv_id = conv["contact"]["id"], conv["id"]
+    tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
+    agendados = [] if tem_pendente else lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora)
+    zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+        f"📅 *REUNIÃO AGENDADA — {nome} ({tel})*\n"
+        f"{adv['curto']} · {NOME_AREA.get(area, 'área a confirmar')} · {texto_slot(inicio)} · Online · "
+        "já está na agenda do EasyJur\n"
+        f"*Caso:* {resumo}\n"
+        f"Lembretes ao cliente: {', '.join(agendados) if agendados else 'já havia mensagem agendada'}\n"
+        f"_(aviso só para conhecimento)_{marca}"))
+    contagem["reunioes"] += 1
+    log(f"reunião gravada e grupo avisado ({adv['curto']})")
+    return True
+
+
+# ---------------------------------------------------------------- GRAVAR pelo grupo (horário combinado à mão)
+RE_GRAVAR = re.compile(r"^\s*\*?gravar\*?\s+(.+?)\s+(\d{1,2})/(\d{1,2})(?:/\d{2,4})?\s*(?:as|às|a)?\s*"
+                       r"(\d{1,2})(?:[:h](\d{2}))?\s*h?\b(.*)$", re.I | re.S)
+COMECO_GRAVAR = datetime(2026, 10, 18, 18, 0, tzinfo=timezone.utc)
+
+
+def ler_gravar(texto):
+    """'GRAVAR Hana 19/10 13h com Fernanda' -> (nome, dia, mes, hora, minuto, resto) ou None."""
+    m = RE_GRAVAR.match(texto or "")
+    if not m:
+        return None
+    nome, dd, mm, hh, mi, resto = m.groups()
+    if int(hh) > 23 or int(mi or 0) > 59:
+        return None
+    return nome.strip(" ,"), int(dd), int(mm), int(hh), int(mi or 0), (resto or "").strip()
+
+
+def advogado_por_nome(texto):
+    t = sem_acento(texto)
+    for chave, adv in (("fernanda", FERNANDA), ("lucas", LUCAS), ("danielle", DANIELLE), ("dani", DANIELLE)):
+        if re.search(rf"\b{chave}\b", t):
+            return adv
+    return None
+
+
+def e_advogado(m):
+    if m.get("sender") == "CONTACT":
+        return any(n in sem_acento(m.get("senderName")) for n in ("danielle", "fernanda", "lucas"))
+    return m.get("sender") == "USER" and bool(re.match(r"^\*dra?\.?\s*(danielle|fernanda|lucas)",
+                                                          sem_acento(m.get("content"))))
+
+
+def gravar_pelo_grupo(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, contagem, grupos):
+    """Advogado escreve no grupo 'GRAVAR Hana 19/10 13h' e a reunião é gravada sem IA."""
+    todas = [(g, m) for g, msgs in grupos.items() for m in msgs]
+    ja = "\n".join(m.get("content") or "" for _, m in todas if m.get("sender") == "AGENT")
+    for g, m in todas:
+        quando = ler_iso(m["createdAt"])
+        if quando < COMECO_GRAVAR or agora - quando > timedelta(hours=24) or not e_advogado(m):
+            continue
+        texto = re.sub(r"^\*[^*]+\*:\s*", "", m.get("content") or "")  # tira a assinatura do painel
+        pedido = ler_gravar(texto)
+        if not pedido:
+            continue
+        marca = f" _#{re.sub(chr(92) + 'D', '', m.get('id', ''))[-8:]}_"
+        if marca.strip() in ja:
+            continue
+
+        def responder(t):
+            if not DRY_RUN:
+                zaia.chamar("enviar_mensagem_grupo", grupoId=g, texto=t + marca)
+
+        nome_pedido, dd, mm, hh, mi, resto = pedido
+        alvo = sem_acento(nome_pedido).split()[0]
+        candidatos = [l for l in leads if sem_acento(l["nome"]).split()[:1] == [alvo]]
+        if len(candidatos) != 1:
+            r = (zaia.chamar("buscar_contatos", query=nome_pedido, limit=5) or {}).get("contatos") or []
+            candidatos = [{"nome": c.get("name") or nome_pedido, "tel": re.sub(r"\D", "", c.get("phone") or ""),
+                           "texto": ""} for c in r if c.get("phone")]
+        if len(candidatos) != 1:
+            responder(f"❓ GRAVAR {nome_pedido}: achei {len(candidatos)} contatos com esse nome. "
+                      "Mande de novo com o telefone: GRAVAR 5594... 19/10 13h")
+            continue
+        lead = candidatos[0]
+        try:
+            inicio = data_do_texto(f"{dd:02d}", f"{mm:02d}", hh, mi, agora.astimezone(BRT))
+        except ValueError:
+            responder(f"❓ GRAVAR {nome_pedido}: data inválida.")
+            continue
+        if inicio < agora:
+            responder(f"❓ GRAVAR {nome_pedido}: {texto_slot(inicio)} já passou.")
+            continue
+        conv, msgs = conversas.de(lead["tel"])
+        if not conv:
+            responder(f"❓ GRAVAR {nome_pedido}: não achei a conversa desse contato na Za.Ia.")
+            continue
+        ofertas = [x for x in msgs if MARCA_OFERTA in (x.get("content") or "")]
+        adv = advogado_por_nome(resto) or (advogado_do_texto(ofertas[-1]["content"]) if ofertas else None)
+        if not adv:
+            responder(f"❓ GRAVAR {nome_pedido}: com qual advogado? Ex.: GRAVAR {nome_pedido} "
+                      f"{dd:02d}/{mm:02d} {hh}h com Fernanda")
+            continue
+        nome = (conv["contact"].get("name") or lead["nome"]).strip()
+        chave = (lead["tel"], inicio.isoformat())
+        ej = easyjur_fn()
+        existentes = agenda_fn().itens(adv["id"], inicio.date(), inicio.date(), tipo="ATENDIMENTO")
+        if any((i.get("hora_inicio") or "")[:5] == f"{inicio:%H:%M}" and i.get("status") != "S" for i in existentes):
+            _gravadas.add(chave)
+            responder(f"ℹ️ {nome}: já existe atendimento de {adv['curto']} em {texto_slot(inicio)} no EasyJur. "
+                      "Nada gravado de novo.")
+            continue
+        area, _ = classificar(lead.get("texto", ""))
+        resumo = resumo_do_caso(lead.get("texto", "")) or "ver a conversa no WhatsApp."
+        if DRY_RUN:
+            log("[simulação] GRAVAR pelo grupo")
+            continue
+        ok = gravar_reuniao(zaia, ej, conv, nome, lead["tel"], adv, inicio, area, resumo, pendentes, agora,
+                            contagem, chave, "Horário combinado pela equipe (GRAVAR no grupo)",
+                            marca if g == GRUPO else "")
+        if ok and g != GRUPO:
+            responder(f"✅ Gravado: {nome}, {texto_slot(inicio)} com {adv['curto']} (aviso no grupo Firma 2026).")
+
+
 _outro_horario_avisado = set()
+_sugestao_gravar = set()
+RE_HORA_LIVRE = re.compile(r"\b(\d{1,2})\s*(?:h|hs|hrs|horas)\b|\b(\d{1,2})[:h](\d{2})\b", re.I)
+RE_ACEITE = re.compile(r"\b(sim|ok|okay|pode ser|combinado|perfeito|fechado|beleza|blz|otimo|certo|"
+                       r"confirmo|confirmado|pode marcar|esta otimo|ta otimo|pode)\b")
+
+
+def sugerir_gravar(zaia, conv, lead, msgs, oferta, ofertados, grupo, contagem):
+    """A equipe propôs ao lead um horário fora da oferta e ele aceitou: sugere no grupo o comando GRAVAR.
+
+    Não grava sozinho (o horário foi combinado por gente, fora das regras de agenda); só deixa o
+    comando pronto para um advogado confirmar. Caso Hana (18/10): equipe disse "consegue às 13hs".
+    """
+    tel = lead["tel"]
+    if tel in _sugestao_gravar:
+        return
+    depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
+    propostas = [m for m in depois if m.get("sender") in ("AGENT", "USER")
+                 and MARCA_OFERTA not in (m.get("content") or "") and RE_HORA_LIVRE.search(m.get("content") or "")]
+    if not propostas:
+        return
+    prop = propostas[-1]
+    aceites = [m for m in depois if m.get("sender") == "CONTACT" and m["createdAt"] > prop["createdAt"]
+               and RE_ACEITE.search(sem_acento(m.get("content") or ""))]
+    if not aceites:
+        return
+    if datetime.now(timezone.utc) - ler_iso(aceites[-1]["createdAt"]) > timedelta(hours=6):
+        return
+    if any("HORÁRIO COMBINADO" in (m.get("content") or "") and tel in (m.get("content") or "")
+           for m in (grupo or {}).get("mensagens", [])):
+        _sugestao_gravar.add(tel)
+        return
+    _sugestao_gravar.add(tel)
+    h = RE_HORA_LIVRE.search(prop["content"])
+    hora = f"{int(h.group(1))}h" if h.group(1) else f"{int(h.group(2))}h{h.group(3)}"
+    data = re.search(r"\b(\d{1,2}/\d{1,2})\b", prop["content"])
+    data = data.group(1) if data else "DD/MM"
+    nome = (conv["contact"].get("name") or lead["nome"]).strip()
+    p_txt = re.sub(r"\s+", " ", sem_assinatura(prop.get("content") or ""))[:160]
+    a_txt = re.sub(r"\s+", " ", aceites[-1].get("content") or "")[:120]
+    if not DRY_RUN:
+        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+            f"📌 *HORÁRIO COMBINADO FORA DA OFERTA — {nome} ({tel})*\n"
+            f"Escritório: \"{p_txt}\"\nLead: \"{a_txt}\"\n"
+            f"Ainda NÃO está no EasyJur. 👉 Para gravar e agendar os lembretes, um advogado responde aqui: "
+            f"*GRAVAR {primeiro_nome(nome)} {data} {hora}*" + (" (troque DD/MM pela data)" if data == "DD/MM" else "")))
+    contagem["sugestao_gravar"] = contagem.get("sugestao_gravar", 0) + 1
+    log("horário combinado fora da oferta — sugerido GRAVAR no grupo")
 
 
 def avisar_outro_horario(zaia, conv, lead, msgs, oferta, ofertados, txt_oferta, grupo, contagem):
@@ -775,8 +1009,9 @@ def avisar_outro_horario(zaia, conv, lead, msgs, oferta, ofertados, txt_oferta, 
         zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
             f"🕐 *LEAD PEDIU OUTRO HORÁRIO — {nome} ({tel})*\n"
             f"Oferta de {adv['curto']}: {oferecidos}.\nResposta: \"{frase}\"\n"
-            "👉 Equipe: combinar o horário com o lead. Quando a Annie confirmar um horário da oferta, "
-            "eu gravo sozinho; horário fora da oferta precisa ser gravado à mão (ou peça ao assistente)."))
+            "👉 Equipe: combinar o horário com o lead. Quando o lead aceitar um horário fora da oferta, "
+            f"responda aqui *GRAVAR {primeiro_nome(nome)} DD/MM HHh* (ex.: GRAVAR {primeiro_nome(nome)} 19/10 13h) "
+            "e eu gravo no EasyJur e agendo os lembretes na hora."))
     contagem["outro_horario"] = contagem.get("outro_horario", 0) + 1
     log("lead pediu outro horário — grupo avisado")
 
@@ -805,6 +1040,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 conf.append((m, batem[0]))
         if not conf:
             avisar_outro_horario(zaia, conv, lead, msgs, ofertas[-1], ofertados, txt, grupo, contagem)
+            sugerir_gravar(zaia, conv, lead, msgs, ofertas[-1], ofertados, grupo, contagem)
             continue
         ultima = conf[-1][0]["content"]
         inicio = data_do_texto(*conf[-1][1], agora)
@@ -851,56 +1087,9 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             contagem["reunioes"] += 1
             continue
 
-        try:
-            pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
-            mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
-                     and (p.get("celular") or "").replace(" ", "") in ("", tel, tel[2:])]
-            if len(mesma) == 1:
-                pessoa_id = mesma[0]["id"]
-            else:
-                pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F", celular=tel,
-                                            tipos=["lead"]))
-            oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
-                              status="1", responsavel=adv["id"], cliente=pessoa_id,
-                              data_atendimento=inicio.date().isoformat(), descricao=resumo)
-            oport_id = id_de(oport)
-            fim = inicio + timedelta(minutes=DURACAO_MIN)
-            ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
-                      cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
-                      data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
-                      local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
-                      f"pela Annie. {resumo}")
-        except OrcamentoEasyJur:
-            raise
-        except Exception as erro:
-            # Não tenta de novo a cada minuto (caso Hana, 18/10: gastou a cota do plantão repetindo o erro).
-            _falhas.add(chave)
-            log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
-            motivo = re.sub(r"^\S+: ", "", str(erro))[:140]
-            if not DRY_RUN:
-                zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
-                    f"⚠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
-                    f"A Annie confirmou {texto_slot(inicio)} com {adv['curto']}, mas o EasyJur recusou a gravação "
-                    f"({motivo}).\n👉 Equipe: gravar à mão no EasyJur e conferir o lembrete. "
-                    "Não vou tentar de novo sozinho."))
+        if not gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendentes, agora,
+                              contagem, chave, "A Annie confirmou"):
             continue
-        _gravadas.add(chave)
-        lembrete = inicio - timedelta(hours=1)
-        tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
-        if lembrete - agora > timedelta(minutes=10) and not tem_pendente:
-            zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
-                        dataHora=lembrete.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
-                        assinatura="ia", ativarIaAoResponder=True, mensagem=(
-                            f"Olá, {primeiro_nome(nome)}! Passando para confirmar nosso atendimento de hoje "
-                            f"às {inicio:%H}h{inicio:%M} com {adv['nome'][0].lower()}{adv['nome'][1:]}. "
-                            "Podemos confirmar sua presença?"))
-        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
-            f"📅 *REUNIÃO AGENDADA — {nome} ({tel})*\n"
-            f"{adv['curto']} · {NOME_AREA.get(area, 'área a confirmar')} · {texto_slot(inicio)} · Online · "
-            "já está na agenda do EasyJur\n"
-            f"*Caso:* {resumo}\n_(aviso só para conhecimento)_"))
-        contagem["reunioes"] += 1
-        log(f"reunião gravada e grupo avisado ({adv['curto']})")
 
 
 # ---------------------------------------------------------------- etapa 3: retomada
@@ -1093,6 +1282,15 @@ def main():
         confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
     except OrcamentoEasyJur as erro:  # sem EasyJur não dá para ofertar nem gravar; o resto segue
         _avisar_orcamento(zaia, erro)
+    try:  # "GRAVAR Fulano 19/10 13h" de advogado no grupo: horário combinado fora da oferta
+        grupo17 = zaia.chamar("ler_grupo", grupoId="claude-grupo-17", limit=30) or {}
+        gravar_pelo_grupo(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes,
+                          datetime.now(timezone.utc), contagem,
+                          {GRUPO: grupo.get("mensagens", []), "claude-grupo-17": grupo17.get("mensagens", [])})
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
+    except Exception as erro:
+        log(f"GRAVAR pelo grupo falhou: {type(erro).__name__}: {erro}")
     try:
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta

@@ -280,3 +280,86 @@ assert not d.pediu_outro_horario("Pode ser às 14h30", ofert)
 assert not d.pediu_outro_horario("O primeiro", ofert)
 assert not d.pediu_outro_horario("Está sim", ofert)
 print("OK — pedido de outro horário detectado")
+
+# ---- GRAVAR pelo grupo e lembretes (8h do dia + 1h antes)
+from datetime import timezone as _tz
+assert d.ler_gravar("GRAVAR Hana 19/10 13h")[:5] == ("Hana", 19, 10, 13, 0)
+assert d.ler_gravar("gravar Hana Souza 19/10 às 13:30 com Fernanda")[:5] == ("Hana Souza", 19, 10, 13, 30)
+assert d.ler_gravar("vamos gravar o vídeo amanhã") is None
+assert d.advogado_por_nome("com Fernanda") is d.FERNANDA
+
+
+class ZG:
+    def __init__(s): s.env = []
+    def chamar(s, f, **a):
+        s.env.append((f, a))
+        if f == "buscar_conversa_por_telefone":
+            return {"conversa": {"id": "c1", "contact": {"id": "k1", "name": "Hana"}}}
+        if f == "ler_conversa":
+            return {"messages": [{"sender": "USER", "createdAt": "2026-10-18T11:29:06.000Z", "content":
+                                  "*Annie*:\nOlá, Hana! A Dra. Fernanda Mesquita analisou o seu caso e pode te atender "
+                                  "por videochamada. Tenho estes horários: 1) segunda-feira, 19/10, às 09h30; 2) "
+                                  "segunda-feira, 19/10, às 14h30. Qual fica melhor pra você?"}]}
+        return {}
+
+
+class EJG:
+    def __init__(s): s.env = []
+    def chamar(s, f, **a):
+        s.env.append((f, a))
+        if f == "list_pessoas":
+            return {"data": []}
+        if f in ("create_pessoa", "create_oportunidade", "create_agenda"):
+            return {"data": {"id": 77}}
+        if f == "list_agenda":
+            return {"data": [], "meta": {"total_pages": 1}}
+        return {"data": {}}
+
+
+agora_g = datetime(2026, 10, 18, 18, 30, tzinfo=_tz.utc)
+z, ej = ZG(), EJG()
+d.DRY_RUN = False
+d._gravadas.clear(); d._falhas.clear()
+grupos = {d.GRUPO: [{"id": "claude-mensagem-99001", "sender": "CONTACT", "senderName": "Fernanda Mesquita",
+                     "content": "GRAVAR Hana 19/10 13h", "createdAt": "2026-10-18T18:20:00.000Z"}]}
+leads_g = [{"nome": "Hana", "tel": "5594900000001", "texto": "Família"}]
+d.gravar_pelo_grupo(z, d.Conversas(z), lambda: ej, lambda: d.Agenda(ej, agora_g.astimezone(d.BRT)), leads_g, [],
+                    agora_g, {"reunioes": 0}, grupos)
+ag = [a for f, a in ej.env if f == "create_agenda"][0]
+assert (ag["id_advogado"], ag["data"], ag["hora_inicio"]) == (378457, "2026-10-19", "13:00")
+lemb = [a["dataHora"] for f, a in z.env if f == "agendar_mensagem"]
+assert lemb == ["2026-10-19T11:00:00.000Z", "2026-10-19T15:00:00.000Z"], lemb  # 8h e 12h de Belém
+aviso = [a["texto"] for f, a in z.env if f == "enviar_mensagem_grupo"][0]
+assert "REUNIÃO AGENDADA" in aviso and "#99001" in aviso and "8h, 1h antes" in aviso
+# rodada seguinte, com o aviso já no grupo: não grava de novo
+grupos[d.GRUPO].append({"id": "x", "sender": "AGENT", "content": aviso, "createdAt": "2026-10-18T18:31:00.000Z"})
+z2, ej2 = ZG(), EJG()
+d.gravar_pelo_grupo(z2, d.Conversas(z2), lambda: ej2, lambda: d.Agenda(ej2, agora_g.astimezone(d.BRT)), leads_g, [],
+                    agora_g, {"reunioes": 0}, grupos)
+assert not [f for f, a in ej2.env if f.startswith("create")]
+print("OK — GRAVAR pelo grupo e lembretes 8h + 1h")
+
+# reunião às 09h30: só o lembrete de 1 hora antes (não manda dois seguidos de manhã)
+z3 = ZG()
+r = d.lembretes(z3, "k", "c", "Ana", d.FERNANDA, datetime(2026, 10, 19, 9, 30, tzinfo=d.BRT),
+                datetime(2026, 10, 18, 15, 0, tzinfo=d.BRT))
+assert r == ["1h antes"]
+print("OK — reunião cedo: só lembrete de 1 hora antes")
+
+# ---- equipe combinou 13h e o lead aceitou: sugere GRAVAR no grupo (caso Hana)
+from datetime import timedelta as _td
+_now = datetime.now(_tz.utc)
+_iso = lambda m: (_now - _td(minutes=m)).isoformat().replace("+00:00", "Z")
+of_msg = {"sender": "USER", "createdAt": _iso(300), "content": "*Annie*:\nOlá, Hana! Tenho estes horários: 1) segunda-feira, 19/10, às 09h30; 2) segunda-feira, 19/10, às 14h30. Qual fica melhor pra você?"}
+hist = [of_msg,
+        {"sender": "CONTACT", "createdAt": _iso(298), "content": "Nesses horários estou trabalhando. Teria 13h?"},
+        {"sender": "AGENT", "createdAt": _iso(100), "content": "*Annie*: ela consegue sim lhe atender as 13hs ☺️"}]
+z = ZG(); d._sugestao_gravar.clear()
+of = set(d.RE_SLOT.findall(of_msg["content"]))
+d.sugerir_gravar(z, {"contact": {"name": "Hana"}}, {"tel": "5594900000001", "nome": "Hana"}, hist, of_msg, of, {"mensagens": []}, {})
+assert not z.env, "sem aceite do lead ainda: não sugere"
+hist.append({"sender": "CONTACT", "createdAt": _iso(5), "content": "Pode ser sim, obrigada"})
+d.sugerir_gravar(z, {"contact": {"name": "Hana"}}, {"tel": "5594900000001", "nome": "Hana"}, hist, of_msg, of, {"mensagens": []}, {})
+txt = z.env[0][1]["texto"]
+assert "HORÁRIO COMBINADO" in txt and "GRAVAR Hana DD/MM 13h" in txt, txt
+print("OK — sugestão de GRAVAR quando o lead aceita horário combinado")

@@ -69,6 +69,8 @@ def resolvido_pelo_codigo(texto, quem):
         return True
     if all(secretaria.classificar_linha(l) for l in linhas):
         return True
+    if all(re.match(r"^\s*\*?gravar\b", l, re.I) for l in linhas):
+        return True  # "GRAVAR Fulano 19/10 13h": o despachante grava sozinho
     if quem == "lucas" and secretaria.ordens_lucas(texto):
         return True
     return False

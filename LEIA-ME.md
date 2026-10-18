@@ -49,6 +49,19 @@ pode entrar aqui**. O que garante isso:
 - O registro de execução (log) não mostra nome, telefone nem conversa de cliente.
 - Para desligar: aba Actions › "Despachante do funil" › "Disable workflow".
 
+## Lembretes, horário fora da oferta e comando GRAVAR
+
+- Ao gravar uma reunião, o despachante agenda dois lembretes ao cliente: às 8h
+  do dia (só quando a reunião é às 10h ou depois) e 1 hora antes.
+- Lead que pede outro dia/hora depois da oferta gera no grupo Firma 2026 o aviso
+  "🕐 LEAD PEDIU OUTRO HORÁRIO".
+- Se a equipe propõe um horário fora da oferta e o lead aceita, sai no grupo
+  "📌 HORÁRIO COMBINADO FORA DA OFERTA" com o comando pronto.
+- Um advogado escreve no grupo (Firma 2026 ou AUTOMAÇÃO) `GRAVAR Hana 19/10 13h`
+  (opcional: `com Fernanda`) e o despachante grava pessoa, oportunidade e
+  atendimento no EasyJur, agenda os lembretes e confirma no grupo, sem IA.
+  O advogado padrão é o da última oferta feita ao lead.
+
 ## Secretaria sem IA (`secretaria.py`)
 
 Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA:
