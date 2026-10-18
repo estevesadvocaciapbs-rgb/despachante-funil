@@ -271,3 +271,12 @@ assert d.e_confirmacao("*Annie*: Perfeito, Hana! Ficou marcado para segunda-feir
                        "por videochamada.", ofert)
 assert d.e_confirmacao("*Annie*: Combinado! O atendimento será na segunda-feira, 19/10, às 09h30.", ofert)
 print("OK — confirmação só quando a Annie fecha um horário")
+
+# ---- lead pedindo outro horário é detectado; escolher um da oferta não é (caso Hana, 18/10)
+ofert = {("19", "10", "09", "30"), ("19", "10", "14", "30")}
+assert d.pediu_outro_horario("Nesses horários estou trabalhando fica muito puxado \nTeria o horário de 13h?", ofert)
+assert d.pediu_outro_horario("Não consigo nesse dia, pode ser quarta?", ofert)
+assert not d.pediu_outro_horario("Pode ser às 14h30", ofert)
+assert not d.pediu_outro_horario("O primeiro", ofert)
+assert not d.pediu_outro_horario("Está sim", ofert)
+print("OK — pedido de outro horário detectado")

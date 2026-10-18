@@ -539,6 +539,21 @@ def e_confirmacao(texto, ofertados):
     return True
 
 
+RE_PEDE_OUTRO = re.compile(
+    r"\b\d{1,2}\s*(?:h|hs|hrs|horas|:\d{2})\b|trabalh|outro horario|outro dia|outra hora|nao posso|nao consigo|"
+    r"nao da\b|mais tarde|mais cedo|sabado|domingo|a noite|depois das|antes das|horario de almoco")
+
+
+def pediu_outro_horario(texto, ofertados):
+    """Lead respondeu à oferta pedindo outro dia/hora (caso Hana, 18/10: "estou trabalhando... teria 13h?")."""
+    t = sem_acento(texto)
+    if not RE_PEDE_OUTRO.search(t):
+        return False
+    horas_ofertadas = {f"{int(s[2])}h{s[3]}" for s in ofertados} | {f"{int(s[2])}:{s[3]}" for s in ofertados}
+    citou_ofertada = any(h in t.replace(" ", "") for h in horas_ofertadas)
+    return not citou_ofertada  # citar um horário da oferta é escolha, não pedido de outro
+
+
 def data_do_texto(dd, mm, hh, mi, agora):
     ano = agora.year + (1 if int(mm) < agora.month - 6 else 0)
     return datetime(ano, int(mm), int(dd), int(hh), int(mi), tzinfo=BRT)
@@ -735,6 +750,37 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
 _conflitos_avisados = set()
 
 
+_outro_horario_avisado = set()
+
+
+def avisar_outro_horario(zaia, conv, lead, msgs, oferta, ofertados, txt_oferta, grupo, contagem):
+    """Lead pediu dia/hora fora da oferta: avisa o grupo Firma 2026 na hora (uma vez por lead), sem EasyJur."""
+    tel = lead["tel"]
+    if tel in _outro_horario_avisado:
+        return
+    pedidos = [m for m in msgs if m.get("sender") == "CONTACT" and m["createdAt"] > oferta["createdAt"]
+               and pediu_outro_horario(m.get("content") or "", ofertados)]
+    if not pedidos or datetime.now(timezone.utc) - ler_iso(pedidos[-1]["createdAt"]) > timedelta(minutes=90):
+        return  # pedido antigo: a equipe já teve tempo de agir; não avisa atrasado
+    if any("PEDIU OUTRO HORÁRIO" in (m.get("content") or "") and tel in (m.get("content") or "")
+           for m in (grupo or {}).get("mensagens", [])):
+        _outro_horario_avisado.add(tel)
+        return
+    _outro_horario_avisado.add(tel)
+    nome = (conv["contact"].get("name") or lead["nome"]).strip()
+    adv = advogado_do_texto(txt_oferta)
+    frase = re.sub(r"\s+", " ", pedidos[-1].get("content") or "")[:200]
+    oferecidos = "; ".join(texto_slot(data_do_texto(*s, datetime.now(BRT))) for s in sorted(ofertados))
+    if not DRY_RUN:
+        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+            f"🕐 *LEAD PEDIU OUTRO HORÁRIO — {nome} ({tel})*\n"
+            f"Oferta de {adv['curto']}: {oferecidos}.\nResposta: \"{frase}\"\n"
+            "👉 Equipe: combinar o horário com o lead. Quando a Annie confirmar um horário da oferta, "
+            "eu gravo sozinho; horário fora da oferta precisa ser gravado à mão (ou peça ao assistente)."))
+    contagem["outro_horario"] = contagem.get("outro_horario", 0) + 1
+    log("lead pediu outro horário — grupo avisado")
+
+
 def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, contagem, grupo=None):
     for lead in leads:
         conv, msgs = conversas.de(lead["tel"])
@@ -758,6 +804,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
                 conf.append((m, batem[0]))
         if not conf:
+            avisar_outro_horario(zaia, conv, lead, msgs, ofertas[-1], ofertados, txt, grupo, contagem)
             continue
         ultima = conf[-1][0]["content"]
         inicio = data_do_texto(*conf[-1][1], agora)
