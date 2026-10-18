@@ -83,11 +83,13 @@ Teste manual: Actions › "Gravar sinal para o Claude (teste manual)" › Run wo
   ao montar uma oferta de horários, ao gravar uma reunião confirmada e, uma vez
   por hora (7h–19h), ao conferir atendimentos concluídos. Uso normal: ~40
   chamadas por dia.
-- Trava de segurança: cada plantão (há 4 por dia) pode fazer no máximo
-  `EASYJUR_MAX_PLANTAO` chamadas (padrão 60, ajustável em **Settings › Secrets
-  and variables › Actions › Variables**). Passou disso, ele avisa o grupo uma
-  vez e para de usar o EasyJur até o próximo plantão; a leitura do WhatsApp
-  continua e o auditor com IA cobre o que ficar pendente.
+- Trava de segurança: no máximo `EASYJUR_MAX_HORA` chamadas por hora (padrão 80,
+  janela móvel) e `EASYJUR_MAX_PLANTAO` por plantão (padrão 250). Se estourar, ele
+  avisa o grupo AUTOMAÇÃO e espera só até a janela liberar; a leitura do WhatsApp
+  continua e o que ficou pendente sai logo depois.
+- Se a gravação de uma reunião confirmada falhar, ele avisa o grupo uma vez
+  ("NÃO CONSEGUI GRAVAR A REUNIÃO") e não tenta de novo sozinho (antes ele repetia
+  a cada minuto e gastava a cota).
 - Cota mensal esgotada (erro 429): ele espera 60 minutos antes de tentar de novo.
 - O resumo de cada rodada no log mostra `easyjur_no_plantao`, o total de
   chamadas feitas no plantão.

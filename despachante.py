@@ -72,9 +72,11 @@ EQUIPE = set(filter(None, os.environ.get(
 # por hora, ao conferir atendimentos concluídos. Este contador é uma trava contra qualquer
 # defeito que faça chamadas em excesso: passou do limite do plantão, ele continua lendo a
 # Za.Ia, mas não toca mais no EasyJur até o próximo plantão (4 plantões por dia).
-EASYJUR_MAX_PLANTAO = int(os.environ.get("EASYJUR_MAX_PLANTAO", "60"))
+# Limite por HORA (janela móvel): se estourar, ele espera só a janela liberar, não o plantão inteiro.
+EASYJUR_MAX_HORA = int(os.environ.get("EASYJUR_MAX_HORA", "80"))
+EASYJUR_MAX_PLANTAO = int(os.environ.get("EASYJUR_MAX_PLANTAO", "250"))
 EASYJUR_PAUSA_429_MIN = 60  # cota mensal esgotada (HTTP 429): espera antes de tentar de novo
-ESTADO_EJ = {"chamadas": 0, "pausado_ate": None, "avisado": False}
+ESTADO_EJ = {"chamadas": 0, "pausado_ate": None, "avisado": False, "recentes": []}
 
 
 class OrcamentoEasyJur(Exception):
@@ -86,9 +88,16 @@ def _registrar_chamada_easyjur():
     pausa = ESTADO_EJ["pausado_ate"]
     if pausa and datetime.now(BRT) < pausa:
         raise OrcamentoEasyJur(f"EasyJur em pausa até {pausa:%H:%M} (cota mensal esgotada)")
+    agora = datetime.now(BRT)
+    recentes = [t for t in ESTADO_EJ["recentes"] if agora - t < timedelta(hours=1)]
+    ESTADO_EJ["recentes"] = recentes
+    if len(recentes) >= EASYJUR_MAX_HORA:
+        libera = recentes[0] + timedelta(hours=1)
+        raise OrcamentoEasyJur(f"limite de {EASYJUR_MAX_HORA} chamadas ao EasyJur por hora atingido; volta às {libera:%H:%M}")
     if ESTADO_EJ["chamadas"] >= EASYJUR_MAX_PLANTAO:
         raise OrcamentoEasyJur(f"limite de {EASYJUR_MAX_PLANTAO} chamadas ao EasyJur neste plantão atingido")
     ESTADO_EJ["chamadas"] += 1
+    recentes.append(agora)
 
 
 def _pausar_easyjur_429():
@@ -103,10 +112,10 @@ def _avisar_orcamento(zaia, erro):
         return
     ESTADO_EJ["avisado"] = True
     try:
-        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+        zaia.chamar("enviar_mensagem_grupo", grupoId="claude-grupo-17", texto=(
             f"⚠️ *DESPACHANTE — EasyJur pausado*\n{erro}. Ofertas de horário e gravação de reuniões "
-            "ficam paradas até o próximo plantão (ou até a cota voltar); a leitura do WhatsApp continua. "
-            "O auditor com IA cobre o que ficar pendente."))
+            "esperam até o horário indicado (no caso de cota mensal, até ela voltar); a leitura do "
+            "WhatsApp continua e nada se perde: o que ficou pendente sai assim que liberar."))
     except Exception as e:  # o aviso nunca pode derrubar a rodada
         log(f"não consegui avisar o grupo: {type(e).__name__}: {e}")
 
@@ -203,7 +212,9 @@ class MCP:
             raise RuntimeError(f"{self.nome}.{ferramenta}: erro na chamada")
         res = resp.get("result", {})
         if res.get("isError"):
-            raise RuntimeError(f"{self.nome}.{ferramenta}: a ferramenta devolveu erro")
+            motivo = "".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
+            motivo = re.sub(r"\s+", " ", motivo)[:200]
+            raise RuntimeError(f"{self.nome}.{ferramenta}: a ferramenta devolveu erro — {motivo}")
         texto = "".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
         try:
             return json.loads(texto)
@@ -505,6 +516,29 @@ def texto_slot(s):
 RE_SLOT = re.compile(r"(\d{2})/(\d{2}),? às (\d{1,2})h(\d{2})")
 
 
+RE_HORA_CITADA = re.compile(r"\b(\d{1,2})h(\d{2})\b")
+FRASES_DE_PERGUNTA = ("qual horario", "qual fica melhor", "qual prefere", "qual dos", "me diga", "ou as ", "ou às ")
+
+
+def e_confirmacao(texto, ofertados):
+    """True só se a Annie confirmou UM dos horários oferecidos.
+
+    Caso Hana (18/10): "me diga só qual horário fica melhor: segunda, 19/10, às 09h30 ou às 14h30?"
+    cita a data só no primeiro horário; não é confirmação, é a pergunta repetida.
+    """
+    batem = [s for s in RE_SLOT.findall(texto) if s in ofertados]
+    if len(batem) != 1:
+        return False
+    horas_ofertadas = {(int(s[2]), s[3]) for s in ofertados}
+    citadas = {(int(h), m) for h, m in RE_HORA_CITADA.findall(texto)} & horas_ofertadas
+    if len(citadas) > 1:
+        return False  # cita mais de um horário da oferta: ainda está perguntando
+    t = sem_acento(texto)
+    if any(f in t for f in FRASES_DE_PERGUNTA):
+        return False
+    return True
+
+
 def data_do_texto(dd, mm, hh, mi, agora):
     ano = agora.year + (1 if int(mm) < agora.month - 6 else 0)
     return datetime(ano, int(mm), int(dd), int(hh), int(mi), tzinfo=BRT)
@@ -720,8 +754,8 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 continue
             if not (m.get("content") or "").startswith("*Annie*"):
                 continue  # mensagem de advogado/rotina citando o horário não é a escolha do cliente
-            batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
-            if len(batem) == 1:  # citar os dois horários de novo não é confirmação
+            if e_confirmacao(m.get("content") or "", ofertados):
+                batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
                 conf.append((m, batem[0]))
         if not conf:
             continue
@@ -738,6 +772,9 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         chave = (tel, inicio.isoformat())
         if chave in _gravadas:
             continue  # já conferida neste plantão: não consulta o EasyJur de novo a cada minuto
+        if chave in _falhas or any("NÃO CONSEGUI GRAVAR" in (m.get("content") or "") and tel in (m.get("content") or "")
+                                   for m in (grupo or {}).get("mensagens", [])):
+            continue  # a gravação já falhou e a equipe foi avisada: não tenta de novo a cada minuto
 
         ej = easyjur_fn()
         agenda = agenda_fn()
@@ -767,24 +804,39 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             contagem["reunioes"] += 1
             continue
 
-        pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
-        mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
-                 and (p.get("celular") or "").replace(" ", "") in ("", tel, tel[2:])]
-        if len(mesma) == 1:
-            pessoa_id = mesma[0]["id"]
-        else:
-            pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F", celular=tel,
-                                        tipos=["lead"]))
-        oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
-                          status="1", responsavel=adv["id"], cliente=pessoa_id,
-                          data_atendimento=inicio.date().isoformat(), descricao=resumo)
-        oport_id = id_de(oport)
-        fim = inicio + timedelta(minutes=DURACAO_MIN)
-        ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
-                  cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
-                  data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
-                  local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
-                  f"pela Annie. {resumo}")
+        try:
+            pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
+            mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
+                     and (p.get("celular") or "").replace(" ", "") in ("", tel, tel[2:])]
+            if len(mesma) == 1:
+                pessoa_id = mesma[0]["id"]
+            else:
+                pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F", celular=tel,
+                                            tipos=["lead"]))
+            oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
+                              status="1", responsavel=adv["id"], cliente=pessoa_id,
+                              data_atendimento=inicio.date().isoformat(), descricao=resumo)
+            oport_id = id_de(oport)
+            fim = inicio + timedelta(minutes=DURACAO_MIN)
+            ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
+                      cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
+                      data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
+                      local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
+                      f"pela Annie. {resumo}")
+        except OrcamentoEasyJur:
+            raise
+        except Exception as erro:
+            # Não tenta de novo a cada minuto (caso Hana, 18/10: gastou a cota do plantão repetindo o erro).
+            _falhas.add(chave)
+            log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
+            motivo = re.sub(r"^\S+: ", "", str(erro))[:140]
+            if not DRY_RUN:
+                zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+                    f"⚠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
+                    f"A Annie confirmou {texto_slot(inicio)} com {adv['curto']}, mas o EasyJur recusou a gravação "
+                    f"({motivo}).\n👉 Equipe: gravar à mão no EasyJur e conferir o lembrete. "
+                    "Não vou tentar de novo sozinho."))
+            continue
         _gravadas.add(chave)
         lembrete = inicio - timedelta(hours=1)
         tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
@@ -880,6 +932,7 @@ RE_TEL = re.compile(r"\b55\d{10,11}\b")
 _concluidos = {"ultima": None, "feitos": set()}
 _tel_cache = {}  # id do atendimento -> telefone (evita repetir get_pessoa a cada rodada)
 _gravadas = set()  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
+_falhas = set()  # (telefone, início) cuja gravação falhou: a equipe é avisada e não se tenta de novo
 _ej_cliente = {}  # cliente MCP do EasyJur reaproveitado entre as rodadas do plantão
 
 

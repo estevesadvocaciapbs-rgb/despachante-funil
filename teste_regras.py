@@ -215,7 +215,7 @@ print("OK — assinatura não confunde o advogado")
 
 # ---- orçamento do EasyJur: trava por plantão e pausa após cota esgotada (15/10)
 from datetime import timedelta
-d.ESTADO_EJ.update(chamadas=0, pausado_ate=None, avisado=False)
+d.ESTADO_EJ.update(chamadas=0, pausado_ate=None, avisado=False, recentes=[])
 limite_original = d.EASYJUR_MAX_PLANTAO
 d.EASYJUR_MAX_PLANTAO = 3
 for _ in range(3):
@@ -226,13 +226,13 @@ try:
 except d.OrcamentoEasyJur as e:
     assert "limite de 3" in str(e)
 assert d.ESTADO_EJ["chamadas"] == 3
-d.ESTADO_EJ.update(chamadas=0, pausado_ate=datetime.now(d.BRT) + timedelta(minutes=30))
+d.ESTADO_EJ.update(chamadas=0, recentes=[], pausado_ate=datetime.now(d.BRT) + timedelta(minutes=30))
 try:
     d._registrar_chamada_easyjur()
     assert False, "deveria estar em pausa"
 except d.OrcamentoEasyJur as e:
     assert "pausa" in str(e)
-d.ESTADO_EJ.update(chamadas=0, pausado_ate=datetime.now(d.BRT) - timedelta(minutes=1))
+d.ESTADO_EJ.update(chamadas=0, recentes=[], pausado_ate=datetime.now(d.BRT) - timedelta(minutes=1))
 d._registrar_chamada_easyjur()  # pausa vencida: volta a chamar
 d.EASYJUR_MAX_PLANTAO = limite_original
 
@@ -248,3 +248,26 @@ d._avisar_orcamento(z, d.OrcamentoEasyJur("limite de 60 chamadas ao EasyJur nest
 d._avisar_orcamento(z, d.OrcamentoEasyJur("de novo"))
 assert z.enviadas == ["enviar_mensagem_grupo"]
 print("OK — orçamento do EasyJur")
+
+# ---- limite por hora: com o limite da hora estourado, recusa; quando a janela passa, volta
+d.ESTADO_EJ.update(chamadas=0, pausado_ate=None, recentes=[datetime.now(d.BRT) - timedelta(minutes=5)] * d.EASYJUR_MAX_HORA)
+try:
+    d._registrar_chamada_easyjur()
+    assert False, "deveria recusar pelo limite da hora"
+except d.OrcamentoEasyJur as e:
+    assert "por hora" in str(e)
+d.ESTADO_EJ.update(recentes=[datetime.now(d.BRT) - timedelta(minutes=61)] * d.EASYJUR_MAX_HORA)
+d._registrar_chamada_easyjur()
+d.ESTADO_EJ.update(chamadas=0, recentes=[])
+print("OK — limite do EasyJur por hora")
+
+# ---- pergunta repetida da Annie não é confirmação (caso Hana, 18/10)
+ofert = {("19", "10", "09", "30"), ("19", "10", "14", "30")}
+pergunta = ("*Annie*: Então me diga só qual horário fica melhor pra você: segunda-feira, 19/10, às 09h30 "
+            "ou às 14h30?")
+assert not d.e_confirmacao(pergunta, ofert)
+assert not d.e_confirmacao("*Annie*: Tenho 19/10, às 09h30 e 14h30 livres.", ofert)
+assert d.e_confirmacao("*Annie*: Perfeito, Hana! Ficou marcado para segunda-feira, 19/10, às 14h30, "
+                       "por videochamada.", ofert)
+assert d.e_confirmacao("*Annie*: Combinado! O atendimento será na segunda-feira, 19/10, às 09h30.", ofert)
+print("OK — confirmação só quando a Annie fecha um horário")
