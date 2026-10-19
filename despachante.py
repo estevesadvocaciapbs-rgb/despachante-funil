@@ -1425,6 +1425,15 @@ def vigia(minutos, intervalo_s=60):
     acordado, checando a cada 60 s, deixa a oferta sair em até ~2 minutos.
     """
     import time
+    try:  # confere a ponte do Google Agenda no início do plantão (só o resultado vai ao log)
+        import agenda_google
+        if not agenda_google.configurado():
+            log("Google Agenda: sem os segredos da ponte (o auditor cria o evento)")
+        else:
+            agenda_google.testar()
+            log("Google Agenda: ponte respondendo")
+    except Exception as erro:
+        log(f"Google Agenda: ponte com problema: {erro}")
     fim = time.monotonic() + minutos * 60
     while time.monotonic() < fim:
         try:
