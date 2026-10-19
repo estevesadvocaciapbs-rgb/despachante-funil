@@ -96,3 +96,19 @@ assert len(chamadas) == 1  # ainda dentro da espera
 p.rodada(z, INICIO + timedelta(minutes=8))
 assert len(chamadas) == 2  # o pedido que ficou pendente sai depois da espera
 print("OK — espera entre chamadas sem perder pedido")
+
+# ---- despesas/repasses aprovados ainda não lançados (lista só de códigos, para o lançamento noturno)
+from datetime import datetime as _dt, timezone as _tz
+_ag = _dt(2026, 10, 19, 23, 0, tzinfo=_tz.utc)
+_msgs = [
+    {"createdAt": "2026-10-19T20:00:00.000Z", "content": "💸 *REPASSE/DESPESA F7 (manual)* — Pedido de: Dra. Fernanda."},
+    {"createdAt": "2026-10-19T20:10:00.000Z", "content": "OK F7"},
+    {"createdAt": "2026-10-19T20:50:00.000Z", "content": "✅ F7 repasse aprovado por Dr. Lucas — entra no lançamento das 22h"},
+    {"createdAt": "2026-10-19T21:50:00.000Z", "content": "✅ *F8* despesa aprovada por Dra. Danielle"},
+    {"createdAt": "2026-10-19T22:00:00.000Z", "content": "✅ F4 lançado no EasyJur — receita nº 1"},
+    {"createdAt": "2026-10-10T20:50:00.000Z", "content": "✅ F2 despesa aprovada por Dr. Lucas"},
+]
+assert p.despesas_pendentes(_msgs, _ag) == ["F7 de 19/10", "F8 de 19/10"], p.despesas_pendentes(_msgs, _ag)
+_msgs.append({"createdAt": "2026-10-20T01:05:00.000Z", "content": "🧾 F7 de 19/10 lançada no EasyJur — despesa nº 99"})
+assert p.despesas_pendentes(_msgs, _ag) == ["F8 de 19/10"]
+print("OK — despesas aprovadas a lançar")

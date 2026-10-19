@@ -28,6 +28,13 @@ ESPERA_ENTRE_CHAMADAS = timedelta(minutes=5)   # uma rodada do Claude leva 1 a 3
 GRUPOS = ["claude-grupo-1", "claude-grupo-17"]
 PRIVADOS = {"5594992048054": "danielle", "5594991742534": "fernanda", "5524992432455": "lucas"}
 RAMO_SINAL, ARQUIVO_SINAL = "sinal", "sinal.json"
+ARQUIVO_DESPESAS = "despesas.json"          # despesas/repasses aprovados ainda não lançados (só códigos)
+INTERVALO_DESPESAS = timedelta(minutes=5)
+JANELA_DESPESAS = timedelta(days=7)
+# "✅ F7 despesa aprovada por Dr. Lucas" / "✅ F7 repasse aprovado por ..." (rotina financeira)
+RE_DESP_APROVADA = re.compile(r"✅\s*\*?F(\d+)\*?\s+(?:despesa|repasse)\b[^\n]{0,40}?aprovad", re.I)
+# "🧾 F7 de 19/10 lançada no EasyJur" (lançamento noturno pelo Chrome)
+RE_DESP_LANCADA = re.compile(r"🧾\s*\*?F(\d+)\*?\s+de\s+(\d{2})/(\d{2})", re.I)
 # As rotinas leem: https://raw.githubusercontent.com/estevesadvocaciapbs-rgb/despachante-funil/sinal/sinal.json
 
 # Em grupo, só vale como pedido o que fala com o sistema (mesma regra do Secretário geral).
@@ -37,7 +44,8 @@ RE_PEDIDO_GRUPO = re.compile(
     r"desbloqueie|encerre|encerra|lembre|coloque|coloca|confira|responda|responde|gere|faz|faca|"
     r"lance|lanca|cadastre|cadastra|registre|registra|de baixa|dar baixa)\b")
 
-_estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False}
+_estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False,
+           "despesas_em": None, "despesas": None}
 
 
 def _log(msg):
@@ -119,15 +127,20 @@ def chamar_claude():
     As rotinas do Claude leem esse arquivo no primeiro passo e encerram na hora se não
     houver pedido novo — assim uma rodada sem pedido quase não gasta nada.
     """
+    agora = datetime.now(timezone.utc).replace(microsecond=0)
+    conteudo = json.dumps({"ultimo_pedido": agora.isoformat().replace("+00:00", "Z")}) + "\n"
+    return gravar_no_ramo(ARQUIVO_SINAL, conteudo, "sinal: pedido novo")
+
+
+def gravar_no_ramo(arquivo, conteudo, mensagem):
+    """Grava um arquivo pequeno (sem dados de cliente) no ramo "sinal" do repositório."""
     import base64
     if not os.environ.get("GH_TOKEN") or not os.environ.get("GITHUB_REPOSITORY"):
         _log("sem GH_TOKEN/GITHUB_REPOSITORY: não dá para gravar o sinal daqui")
         return False
-    agora = datetime.now(timezone.utc).replace(microsecond=0)
-    conteudo = json.dumps({"ultimo_pedido": agora.isoformat().replace("+00:00", "Z")}) + "\n"
     try:
         try:
-            atual = _github("GET", f"contents/{ARQUIVO_SINAL}?ref={RAMO_SINAL}")
+            atual = _github("GET", f"contents/{arquivo}?ref={RAMO_SINAL}")
             sha = atual.get("sha")
         except urllib.error.HTTPError as e:
             if e.code != 404:
@@ -139,11 +152,11 @@ def chamar_claude():
             except urllib.error.HTTPError as e2:
                 if e2.code != 422:  # 422 = o ramo já existe
                     raise
-        corpo = {"message": "sinal: pedido novo", "branch": RAMO_SINAL,
+        corpo = {"message": mensagem, "branch": RAMO_SINAL,
                  "content": base64.b64encode(conteudo.encode()).decode()}
         if sha:
             corpo["sha"] = sha
-        _github("PUT", f"contents/{ARQUIVO_SINAL}", corpo)
+        _github("PUT", f"contents/{arquivo}", corpo)
         return True
     except urllib.error.HTTPError as e:
         _log(f"GitHub recusou o sinal: HTTP {e.code}")
@@ -151,6 +164,42 @@ def chamar_claude():
     except Exception as erro:
         _log(f"sinal não gravado: {type(erro).__name__}")
         return False
+
+
+def despesas_pendentes(msgs, agora):
+    """Códigos "F7 de 19/10" com despesa/repasse aprovado e ainda sem "🧾 ... lançada"."""
+    aprovadas, lancadas = {}, set()
+    for m in msgs:
+        texto = m.get("content") or ""
+        quando = ler_iso(m["createdAt"])
+        if agora - quando > JANELA_DESPESAS:
+            continue
+        dia = quando.astimezone(BRT).strftime("%d/%m")
+        for n in RE_DESP_APROVADA.findall(texto):
+            aprovadas[f"F{int(n)} de {dia}"] = True
+        for n, d, mes in RE_DESP_LANCADA.findall(texto):
+            lancadas.add(f"F{int(n)} de {d}/{mes}")
+    return sorted(k for k in aprovadas if k not in lancadas)
+
+
+def atualizar_despesas(zaia, agora):
+    """A cada 5 min confere o grupo AUTOMAÇÃO e grava despesas.json só quando a lista muda."""
+    if _estado["despesas_em"] and agora - _estado["despesas_em"] < INTERVALO_DESPESAS:
+        return
+    _estado["despesas_em"] = agora
+    try:
+        msgs = (zaia.chamar("ler_grupo", grupoId="claude-grupo-17", limit=100) or {}).get("mensagens", [])
+    except Exception as erro:
+        _log(f"despesas: grupo não lido: {type(erro).__name__}")
+        return
+    pend = despesas_pendentes(msgs, agora)
+    if pend == _estado["despesas"]:
+        return
+    conteudo = json.dumps({"pendentes": pend, "atualizado": agora.replace(microsecond=0)
+                           .isoformat().replace("+00:00", "Z")}, ensure_ascii=False) + "\n"
+    if gravar_no_ramo(ARQUIVO_DESPESAS, conteudo, "despesas aprovadas a lançar"):
+        _estado["despesas"] = pend
+        _log(f"despesas a lançar: {len(pend)}")
 
 
 def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
@@ -162,6 +211,7 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
     if _estado["ultima"] and agora - _estado["ultima"] < INTERVALO:
         return
     _estado["ultima"] = agora
+    atualizar_despesas(zaia, agora)
     achou = 0
     for tel, quem in PRIVADOS.items():
         try:
