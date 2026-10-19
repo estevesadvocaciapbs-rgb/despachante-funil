@@ -117,6 +117,12 @@ novo; assim a rodada vazia quase não gasta. Em grupo, só conta mensagem de
 advogado dirigida ao sistema (verbo de ordem, código ou menção ao assistente).
 Teste manual: Actions › "Gravar sinal para o Claude (teste manual)" › Run workflow.
 
+O porteiro também grava, a cada 5 minutos, o arquivo `despesas.json` no mesmo ramo
+`sinal`: a lista de códigos de despesas e repasses já aprovados no grupo AUTOMAÇÃO
+("✅ F7 despesa aprovada…") e ainda não lançados ("🧾 F7 de 19/10 lançada…"). Só
+códigos, sem nenhum dado. A tarefa noturna do computador do escritório (22h) lê esse
+arquivo e só abre o EasyJur no Chrome quando a lista não está vazia.
+
 ## Consumo da API do EasyJur (cota mensal de 10.000 chamadas)
 
 - O despachante lê a Za.Ia a cada minuto, mas só chama o EasyJur quando precisa:
