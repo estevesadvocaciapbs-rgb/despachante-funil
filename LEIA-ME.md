@@ -125,14 +125,21 @@ Teste manual: Actions › "Gravar sinal para o Claude (teste manual)" › Run wo
   chamadas por dia.
 - Trava de segurança: no máximo `EASYJUR_MAX_HORA` chamadas por hora (padrão 80,
   janela móvel) e `EASYJUR_MAX_PLANTAO` por plantão (padrão 250). Se estourar, ele
-  avisa o grupo AUTOMAÇÃO e espera só até a janela liberar; a leitura do WhatsApp
+  avisa o Dr. Lucas no privado e espera só até a janela liberar; a leitura do WhatsApp
   continua e o que ficou pendente sai logo depois.
-- Se a gravação de uma reunião confirmada falhar, ele avisa o grupo uma vez
+- Se a gravação de uma reunião confirmada falhar, ele avisa o Dr. Lucas no privado uma vez
   ("NÃO CONSEGUI GRAVAR A REUNIÃO") e não tenta de novo sozinho (antes ele repetia
   a cada minuto e gastava a cota).
 - Cota mensal esgotada (erro 429): ele espera 60 minutos antes de tentar de novo.
 - O resumo de cada rodada no log mostra `easyjur_no_plantao`, o total de
   chamadas feitas no plantão.
+
+## Erros da automação vão só ao Dr. Lucas (desde 19/10/2026)
+
+O Dr. Lucas é o responsável por corrigir os erros da automação. Por isso os avisos de
+erro do despachante (EasyJur pausado, reunião que não deu para gravar) e os defeitos
+encontrados pelo auditor vão só para o privado dele. Os grupos ficam como informe do
+que acontece nos contatos da Za.Ia; o auditor manda no máximo 4 informes por dia.
 
 ## Regras de agenda (iguais às das rotinas)
 

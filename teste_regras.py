@@ -236,18 +236,20 @@ d.ESTADO_EJ.update(chamadas=0, recentes=[], pausado_ate=datetime.now(d.BRT) - ti
 d._registrar_chamada_easyjur()  # pausa vencida: volta a chamar
 d.EASYJUR_MAX_PLANTAO = limite_original
 
-# o aviso ao grupo sai uma vez só por plantão e nunca derruba a rodada
+# o aviso de erro sai uma vez só por plantão, vai só ao privado do Dr. Lucas e nunca derruba a rodada
 class FakeZAviso:
     def __init__(self): self.enviadas = []
     def chamar(self, f, **a):
-        self.enviadas.append(f); return {}
+        self.enviadas.append((f, a.get("numero") or a.get("grupoId"))); return {}
 d.ESTADO_EJ.update(avisado=False)
 d.DRY_RUN = False
 z = FakeZAviso()
 d._avisar_orcamento(z, d.OrcamentoEasyJur("limite de 60 chamadas ao EasyJur neste plantão atingido"))
 d._avisar_orcamento(z, d.OrcamentoEasyJur("de novo"))
-assert z.enviadas == ["enviar_mensagem_grupo"]
-print("OK — orçamento do EasyJur")
+assert z.enviadas == [("enviar_mensagem", d.TEL_ERROS)], z.enviadas
+assert d.ja_avisou_lucas(z, ("EasyJur pausado",))
+assert not d.ja_avisou_lucas(z, ("NÃO CONSEGUI GRAVAR", "5594900000001"))
+print("OK — orçamento do EasyJur (aviso só ao Dr. Lucas)")
 
 # ---- limite por hora: com o limite da hora estourado, recusa; quando a janela passa, volta
 d.ESTADO_EJ.update(chamadas=0, pausado_ate=None, recentes=[datetime.now(d.BRT) - timedelta(minutes=5)] * d.EASYJUR_MAX_HORA)

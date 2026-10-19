@@ -107,19 +107,45 @@ def _pausar_easyjur_429():
     log(f"EasyJur: cota mensal esgotada (HTTP 429) — sem chamadas por {EASYJUR_PAUSA_429_MIN} min")
 
 
+TEL_ERROS = "5524992432455"  # Dr. Lucas: responsável por corrigir os erros da automação (decisão de 19/10/2026)
+_avisos_lucas = {"carregado": False, "textos": []}
+
+
+def ja_avisou_lucas(zaia, trecho):
+    """Confere no privado do Dr. Lucas (lido uma vez por plantão) se um aviso de erro já foi mandado."""
+    if not _avisos_lucas["carregado"]:
+        _avisos_lucas["carregado"] = True
+        try:
+            conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=TEL_ERROS) or {}).get("conversa")
+            if conv:
+                msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
+                _avisos_lucas["textos"] += [m.get("content") or "" for m in msgs if m.get("sender") != "CONTACT"]
+        except Exception as e:
+            log(f"privado do Dr. Lucas não lido: {type(e).__name__}")
+    return any(all(t in txt for t in trecho) for txt in _avisos_lucas["textos"])
+
+
+def avisar_lucas(zaia, texto):
+    """Erros da automação vão só ao Dr. Lucas, no privado; o grupo fica só como informe."""
+    _avisos_lucas["textos"].append(texto)
+    if DRY_RUN:
+        return
+    try:
+        zaia.chamar("enviar_mensagem", numero=TEL_ERROS, texto=texto)
+    except Exception as e:  # o aviso nunca pode derrubar a rodada
+        log(f"não consegui avisar o Dr. Lucas: {type(e).__name__}: {e}")
+
+
 def _avisar_orcamento(zaia, erro):
-    """Avisa o grupo uma vez por plantão que o EasyJur ficou fora do alcance do despachante."""
+    """Avisa o Dr. Lucas uma vez por plantão que o EasyJur ficou fora do alcance do despachante."""
     log(f"EasyJur indisponível para o despachante: {erro}")
     if ESTADO_EJ["avisado"] or DRY_RUN:
         return
     ESTADO_EJ["avisado"] = True
-    try:
-        zaia.chamar("enviar_mensagem_grupo", grupoId="claude-grupo-17", texto=(
-            f"⚠️ *DESPACHANTE — EasyJur pausado*\n{erro}. Ofertas de horário e gravação de reuniões "
-            "esperam até o horário indicado (no caso de cota mensal, até ela voltar); a leitura do "
-            "WhatsApp continua e nada se perde: o que ficou pendente sai assim que liberar."))
-    except Exception as e:  # o aviso nunca pode derrubar a rodada
-        log(f"não consegui avisar o grupo: {type(e).__name__}: {e}")
+    avisar_lucas(zaia, (
+        f"🛠️ *DESPACHANTE — EasyJur pausado*\n{erro}. Ofertas de horário e gravação de reuniões "
+        "esperam até o horário indicado (no caso de cota mensal, até ela voltar); a leitura do "
+        "WhatsApp continua e nada se perde: o que ficou pendente sai assim que liberar."))
 
 
 # telefone cru (5594991234567) ou formatado ((94) 99123-4567); datas e horas não casam
@@ -828,12 +854,11 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
         _falhas.add(chave)
         log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
         motivo = re.sub(r"^\S+: ", "", str(erro))[:140]
-        if not DRY_RUN:
-            zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
-                f"⚠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
-                f"{origem}: {texto_slot(inicio)} com {adv['curto']}, mas o EasyJur recusou a gravação "
-                f"({motivo}).\n👉 Equipe: gravar à mão no EasyJur e conferir o lembrete. "
-                f"Não vou tentar de novo sozinho.{marca}"))
+        avisar_lucas(zaia, (
+            f"🛠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
+            f"{origem}: {texto_slot(inicio)} com {adv['curto']}, mas o EasyJur recusou a gravação "
+            f"({motivo}).\n👉 Gravar à mão no EasyJur (ou corrigir e usar o comando GRAVAR no grupo) "
+            f"e conferir o lembrete. Não vou tentar de novo sozinho.{marca}"))
         return False
     _gravadas.add(chave)
     contato_id, conv_id = conv["contact"]["id"], conv["id"]
@@ -1154,8 +1179,9 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         if chave in _gravadas:
             continue  # já conferida neste plantão: não consulta o EasyJur de novo a cada minuto
         if chave in _falhas or any("NÃO CONSEGUI GRAVAR" in (m.get("content") or "") and tel in (m.get("content") or "")
-                                   for m in (grupo or {}).get("mensagens", [])):
-            continue  # a gravação já falhou e a equipe foi avisada: não tenta de novo a cada minuto
+                                   for m in (grupo or {}).get("mensagens", [])) \
+                or ja_avisou_lucas(zaia, ("NÃO CONSEGUI GRAVAR", tel, texto_slot(inicio))):
+            continue  # a gravação já falhou e o Dr. Lucas foi avisado: não tenta de novo a cada minuto
 
         ej = easyjur_fn()
         agenda = agenda_fn()
