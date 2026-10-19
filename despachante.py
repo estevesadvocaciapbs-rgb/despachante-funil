@@ -107,6 +107,22 @@ def _pausar_easyjur_429():
     log(f"EasyJur: cota mensal esgotada (HTTP 429) — sem chamadas por {EASYJUR_PAUSA_429_MIN} min")
 
 
+def celular_br(tel):
+    """5594991234567 -> (94) 99123-4567 (formato que o EasyJur aceita no cadastro)."""
+    d = re.sub(r"\D", "", tel or "")
+    if len(d) in (12, 13) and d.startswith("55"):
+        d = d[2:]
+    if len(d) == 11:
+        return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+    return tel
+
+
+# Avisos de falha anteriores a esta hora não bloqueiam nova tentativa: o celular cru era recusado
+# pelo EasyJur (corrigido em 19/10/2026); as reuniões que falharam por isso são gravadas de novo, uma vez.
+NOVA_TENTATIVA_DESDE = "2026-10-19T18:40:00"
+
 TEL_ERROS = "5524992432455"  # Dr. Lucas: responsável por corrigir os erros da automação (decisão de 19/10/2026)
 _avisos_lucas = {"carregado": False, "textos": []}
 
@@ -119,7 +135,8 @@ def ja_avisou_lucas(zaia, trecho):
             conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=TEL_ERROS) or {}).get("conversa")
             if conv:
                 msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
-                _avisos_lucas["textos"] += [m.get("content") or "" for m in msgs if m.get("sender") != "CONTACT"]
+                _avisos_lucas["textos"] += [m.get("content") or "" for m in msgs if m.get("sender") != "CONTACT"
+                                            and (m.get("createdAt") or "") >= NOVA_TENTATIVA_DESDE]
         except Exception as e:
             log(f"privado do Dr. Lucas não lido: {type(e).__name__}")
     return any(all(t in txt for t in trecho) for txt in _avisos_lucas["textos"])
@@ -241,7 +258,7 @@ class MCP:
         res = resp.get("result", {})
         if res.get("isError"):
             motivo = "".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
-            motivo = re.sub(r"\s+", " ", motivo)[:200]
+            motivo = re.sub(r"\s+", " ", motivo)[:400]
             raise RuntimeError(f"{self.nome}.{ferramenta}: a ferramenta devolveu erro — {motivo}")
         texto = "".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
         try:
@@ -832,12 +849,13 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
     try:
         pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
         mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
-                 and (p.get("celular") or "").replace(" ", "") in ("", tel, tel[2:])]
+                 and re.sub(r"\D", "", p.get("celular") or "") in ("", tel, tel[2:])]
         if len(mesma) == 1:
             pessoa_id = mesma[0]["id"]
         else:
-            pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F", celular=tel,
-                                        tipos=["lead"]))
+            # O EasyJur recusa (HTTP 422) o celular cru "5594991234567"; aceita "(94) 99123-4567".
+            pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F",
+                                        celular=celular_br(tel), tipos=["lead"]))
         oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
                           status="1", responsavel=adv["id"], cliente=pessoa_id,
                           data_atendimento=inicio.date().isoformat(), descricao=resumo)
@@ -853,7 +871,7 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
         # Não tenta de novo a cada minuto (caso Hana, 18/10: gastou a cota do plantão repetindo o erro).
         _falhas.add(chave)
         log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
-        motivo = re.sub(r"^\S+: ", "", str(erro))[:140]
+        motivo = re.sub(r"^\S+: ", "", str(erro))[:350]
         avisar_lucas(zaia, (
             f"🛠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
             f"{origem}: {texto_slot(inicio)} com {adv['curto']}, mas o EasyJur recusou a gravação "

@@ -424,3 +424,9 @@ zp2 = ZP(hist)
 d.avisar_presenca(zp2, d.Conversas(zp2), [{"nome": "Hana", "tel": "5594900000001"}], {"mensagens": []}, _n, {})
 assert not [f for f, a in zp2.env if f == "enviar_mensagem"]
 print("OK — presença confirmada: link ao advogado uma vez")
+
+# ---- celular no formato que o EasyJur aceita (o cru "55..." dava HTTP 422)
+assert d.celular_br("5594900000001") == "(94) 90000-0001"
+assert d.celular_br("559432221111") == "(94) 3222-1111"
+assert d.celular_br("94900000001") == "(94) 90000-0001"
+print("OK — celular no formato do EasyJur")
