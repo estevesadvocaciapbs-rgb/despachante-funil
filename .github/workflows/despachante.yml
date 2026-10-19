@@ -36,6 +36,8 @@ jobs:
           EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
           TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
           GH_TOKEN: ${{ github.token }}
+          GOOGLE_AGENDA_URL: ${{ secrets.GOOGLE_AGENDA_URL }}
+          GOOGLE_AGENDA_CHAVE: ${{ secrets.GOOGLE_AGENDA_CHAVE }}
           PYTHONUNBUFFERED: "1"
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.simulacao }}" = "true" ]; then
