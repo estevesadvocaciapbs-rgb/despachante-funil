@@ -40,11 +40,13 @@ BRT = timezone(timedelta(hours=-3))
 DRY_RUN = "--dry-run" in sys.argv
 
 DANIELLE = {"id": 344269, "nome": "A Dra. Danielle Esteves", "curto": "Dra. Danielle Esteves",
+            "tel": "5594992048054", "membro": None,  # usa Outlook: não recebe convite do Google
             "inicios": ["10:00", "10:30", "11:00", "14:00", "14:30", "15:00",
                         "15:30", "16:00", "16:30", "17:00"]}
 FERNANDA = {"id": 378457, "nome": "A Dra. Fernanda Mesquita", "curto": "Dra. Fernanda Mesquita",
+            "tel": "5594991742534", "membro": "fernanda",
             "inicios": ["09:30", "14:30"], "bloqueia_dia_audiencia": True}
-LUCAS = {"id": 344268, "nome": "O Dr. Lucas", "curto": "Dr. Lucas",
+LUCAS = {"id": 344268, "nome": "O Dr. Lucas", "curto": "Dr. Lucas", "tel": "5524992432455", "membro": "lucas",
          # sem almoço: manhã até 11h30 (termina 12h), tarde a partir das 14h
          "inicios": ["10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]}
 ADVOGADOS = [DANIELLE, FERNANDA, LUCAS]
@@ -753,7 +755,7 @@ _conflitos_avisados = set()
 LEMBRETE_MANHA_H = 8  # lembrete no começo do dia do atendimento (além do de 1 hora antes)
 
 
-def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora):
+def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link=""):
     """Agenda os lembretes ao cliente: 8h do dia (se a reunião for às 10h ou depois) e 1 hora antes."""
     quem = f"{adv['nome'][0].lower()}{adv['nome'][1:]}"
     hora = f"{inicio:%H}h{inicio:%M}"
@@ -767,14 +769,16 @@ def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora):
                     dataHora=manha.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
                     assinatura="ia", ativarIaAoResponder=True, mensagem=(
                         f"Bom dia, {pn}! Passando para lembrar do seu atendimento de hoje, às {hora}, com {quem}, "
-                        "por videochamada. Uma hora antes eu te mando outro lembrete. Até mais tarde!"))
+                        "por videochamada." + (f" O link de acesso é: {link}" if link else "")
+                        + " Uma hora antes eu te mando outro lembrete. Até mais tarde!"))
         agendados.append("8h")
     if um_h - agora > timedelta(minutes=10):
         zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
                     dataHora=um_h.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
                     assinatura="ia", ativarIaAoResponder=True, mensagem=(
                         f"Olá, {pn}! Passando para confirmar nosso atendimento de hoje às {hora} com {quem}. "
-                        "Podemos confirmar sua presença?"))
+                        + (f"O link da videochamada é: {link} — é só clicar nele na hora marcada. " if link else "")
+                        + "Podemos confirmar sua presença?"))
         agendados.append("1h antes")
     return agendados
 
@@ -785,6 +789,20 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
 
     Devolve True se gravou. Se o EasyJur recusar, avisa o grupo uma vez e não tenta de novo sozinho.
     """
+    fim = inicio + timedelta(minutes=DURACAO_MIN)
+    google, link, aviso_google = None, "", "Google Agenda: ponte não configurada (o auditor cria o evento)"
+    try:
+        import agenda_google
+        google = agenda_google.criar_reuniao(
+            f"Reunião {adv['curto'].replace(' Esteves', '').replace(' Mesquita', '')} — {nome}", nome, inicio, fim,
+            f"Lead: {nome} ({tel}). {resumo}", email_do_advogado(zaia, adv))
+        if google:
+            link = google.get("link") or ""
+            aviso_google = ("Google Agenda: evento criado" + (" · sala aberta (entra sem pedir permissão)"
+                            if google.get("aberta") else " · sala com controle de entrada padrão do Meet"))
+    except Exception as erro:
+        log(f"Google Agenda falhou: {type(erro).__name__}: {erro}")
+        aviso_google = "Google Agenda: falhou (o auditor tenta de novo)"
     try:
         pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
         mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
@@ -798,12 +816,11 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
                           status="1", responsavel=adv["id"], cliente=pessoa_id,
                           data_atendimento=inicio.date().isoformat(), descricao=resumo)
         oport_id = id_de(oport)
-        fim = inicio + timedelta(minutes=DURACAO_MIN)
         ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
                   cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
                   data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
-                  local="Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
-                  f"({origem}). {resumo}")
+                  local=link or "Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
+                  f"({origem}). " + (f"Link da videochamada: {link} . " if link else "") + resumo)
     except OrcamentoEasyJur:
         raise
     except Exception as erro:
@@ -821,14 +838,28 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
     _gravadas.add(chave)
     contato_id, conv_id = conv["contact"]["id"], conv["id"]
     tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
-    agendados = [] if tem_pendente else lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora)
+    agendados = [] if tem_pendente else lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link)
+    if link:  # confirmação com o link já, para o cliente guardar
+        zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
+                    dataHora=(datetime.now(timezone.utc) + timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:00.000Z"),
+                    assinatura="ia", ativarIaAoResponder=True, mensagem=(
+                        f"Olá, {primeiro_nome(nome)}! Sua reunião com {adv['nome'][0].lower()}{adv['nome'][1:]} "
+                        f"está confirmada para {texto_slot(inicio)}, por videochamada. Este é o link de acesso: {link} "
+                        "— é só clicar nele na hora marcada. Eu te mando lembrete no dia. Até lá!"))
     zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
         f"📅 *REUNIÃO AGENDADA — {nome} ({tel})*\n"
         f"{adv['curto']} · {NOME_AREA.get(area, 'área a confirmar')} · {texto_slot(inicio)} · Online · "
         "já está na agenda do EasyJur\n"
         f"*Caso:* {resumo}\n"
-        f"Lembretes ao cliente: {', '.join(agendados) if agendados else 'já havia mensagem agendada'}\n"
+        f"Lembretes ao cliente: {', '.join(agendados) if agendados else 'já havia mensagem agendada'} · {aviso_google}\n"
         f"_(aviso só para conhecimento)_{marca}"))
+    try:  # o advogado responsável recebe também no privado, com o link
+        zaia.chamar("enviar_mensagem", numero=adv["tel"], texto=(
+            f"📅 *REUNIÃO AGENDADA COM VOCÊ — {nome} ({tel})*\n"
+            f"{texto_slot(inicio)} · Online · {NOME_AREA.get(area, 'área a confirmar')}\n"
+            f"*Caso:* {resumo}\n" + (f"🔗 Link: {link}" if link else "🔗 Link: sai no Google Agenda em seguida")))
+    except Exception as erro:
+        log(f"aviso ao advogado no privado falhou: {type(erro).__name__}")
     contagem["reunioes"] += 1
     log(f"reunião gravada e grupo avisado ({adv['curto']})")
     return True
@@ -935,6 +966,73 @@ def gravar_pelo_grupo(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, 
                             marca if g == GRUPO else "")
         if ok and g != GRUPO:
             responder(f"✅ Gravado: {nome}, {texto_slot(inicio)} com {adv['curto']} (aviso no grupo Firma 2026).")
+
+
+_emails = {}
+
+
+def email_do_advogado(zaia, adv):
+    """E-mail do advogado para o convite do Google, lido na hora da Za.Ia (não fica no código público)."""
+    if not adv.get("membro"):
+        return None
+    if adv["membro"] not in _emails:
+        membros = (zaia.chamar("listar_membros") or {}).get("membros") or []
+        for m in membros:
+            n = sem_acento(m.get("nome") or m.get("name") or "")
+            if adv["membro"] in n and "automa" not in n:
+                _emails[adv["membro"]] = m.get("email")
+                break
+        else:
+            _emails[adv["membro"]] = None
+    return _emails[adv["membro"]]
+
+
+# ---------------------------------------------------------------- presença confirmada → link ao advogado
+MARCA_LEMBRETE_1H = "Passando para confirmar nosso atendimento de hoje"
+RE_MEET = re.compile(r"https://meet\.google\.com/[a-z0-9-]+")
+_presenca_avisada = set()
+
+
+def avisar_presenca(zaia, conversas, leads, grupo17, agora, contagem):
+    """Cliente respondeu "sim/confirmo" ao lembrete de 1 hora antes: manda o link ao advogado no privado."""
+    for lead in leads:
+        tel = lead["tel"]
+        if tel in _presenca_avisada:
+            continue
+        conv, msgs = conversas.de(tel)
+        if not conv:
+            continue
+        lembretes_1h = [m for m in msgs if m.get("sender") in ("AGENT", "USER")
+                        and MARCA_LEMBRETE_1H in (m.get("content") or "")]
+        if not lembretes_1h:
+            continue
+        lem = lembretes_1h[-1]
+        if agora - ler_iso(lem["createdAt"]) > timedelta(hours=3):
+            continue  # lembrete de outro dia
+        respostas = [m for m in msgs if m.get("sender") == "CONTACT" and m["createdAt"] > lem["createdAt"]
+                     and RE_ACEITE.search(sem_acento(m.get("content") or ""))]
+        if not respostas:
+            continue
+        if any("PRESENÇA CONFIRMADA" in (m.get("content") or "") and tel in (m.get("content") or "")
+               for m in (grupo17 or {}).get("mensagens", [])):
+            _presenca_avisada.add(tel)
+            continue
+        _presenca_avisada.add(tel)
+        adv = advogado_do_texto(sem_assinatura(lem.get("content") or ""))
+        links = [l for m in msgs if m.get("sender") in ("AGENT", "USER") for l in RE_MEET.findall(m.get("content") or "")]
+        link = links[-1] if links else ""
+        hora = re.search(r"hoje,? às (\d{1,2}h\d{2})", lem.get("content") or "")
+        hora = hora.group(1) if hora else "hoje"
+        nome = (conv["contact"].get("name") or lead["nome"]).strip()
+        if DRY_RUN:
+            continue
+        zaia.chamar("enviar_mensagem", numero=adv["tel"], texto=(
+            f"✅ *{nome} confirmou presença* no atendimento de hoje às {hora}.\n"
+            + (f"🔗 Link da videochamada: {link}" if link else "🔗 Link: veja o evento no Google Agenda do escritório")))
+        zaia.chamar("enviar_mensagem_grupo", grupoId="claude-grupo-17", texto=(
+            f"✅ PRESENÇA CONFIRMADA — {nome} ({tel}) · {hora} · {adv['curto']} · link enviado no privado do advogado"))
+        contagem["presencas"] = contagem.get("presencas", 0) + 1
+        log("presença confirmada — link enviado ao advogado")
 
 
 _outro_horario_avisado = set()
@@ -1287,6 +1385,7 @@ def main():
         gravar_pelo_grupo(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes,
                           datetime.now(timezone.utc), contagem,
                           {GRUPO: grupo.get("mensagens", []), "claude-grupo-17": grupo17.get("mensagens", [])})
+        avisar_presenca(zaia, conversas, leads_conf, grupo17, datetime.now(timezone.utc), contagem)
     except OrcamentoEasyJur as erro:
         _avisar_orcamento(zaia, erro)
     except Exception as erro:

@@ -363,3 +363,62 @@ d.sugerir_gravar(z, {"contact": {"name": "Hana"}}, {"tel": "5594900000001", "nom
 txt = z.env[0][1]["texto"]
 assert "HORÁRIO COMBINADO" in txt and "GRAVAR Hana DD/MM 13h" in txt, txt
 print("OK — sugestão de GRAVAR quando o lead aceita horário combinado")
+
+# ---- Google Agenda pela ponte: link vai para o EasyJur, lembretes, cliente e advogado (simulado)
+import agenda_google
+agenda_google.criar_reuniao = lambda *a, **k: {"id": "ev1", "link": "https://meet.google.com/abc-defg-hij",
+                                               "aberta": True, "ja_existia": False}
+
+
+class ZM(ZG):
+    def chamar(s, f, **a):
+        if f == "listar_membros":
+            s.env.append((f, a))
+            return {"membros": [{"nome": "Automação", "email": "x@x"}, {"nome": "Fernanda Mesquita ", "email": "f@x"}]}
+        return ZG.chamar(s, f, **a)
+
+
+d._gravadas.clear(); d._falhas.clear(); d._emails.clear()
+z, ej = ZM(), EJG()
+grupos = {d.GRUPO: [{"id": "claude-mensagem-99002", "sender": "CONTACT", "senderName": "Fernanda Mesquita",
+                     "content": "GRAVAR Hana 19/10 13h", "createdAt": "2026-10-18T18:20:00.000Z"}]}
+d.gravar_pelo_grupo(z, d.Conversas(z), lambda: ej, lambda: d.Agenda(ej, agora_g.astimezone(d.BRT)), leads_g, [],
+                    agora_g, {"reunioes": 0}, grupos)
+ag = [a for f, a in ej.env if f == "create_agenda"][0]
+assert "https://meet.google.com/abc-defg-hij" in ag["descricao"] and ag["local"].startswith("https://meet")
+msgs_cli = [a["mensagem"] for f, a in z.env if f == "agendar_mensagem"]
+assert len(msgs_cli) == 3 and all("meet.google.com/abc-defg-hij" in m for m in msgs_cli)  # 8h, 1h, confirmação
+priv = [a for f, a in z.env if f == "enviar_mensagem"][0]
+assert priv["numero"] == "5594991742534" and "REUNIÃO AGENDADA COM VOCÊ" in priv["texto"] and "meet.google" in priv["texto"]
+assert d.email_do_advogado(z, d.FERNANDA) == "f@x" and d.email_do_advogado(z, d.DANIELLE) is None
+print("OK — Google Agenda: link no EasyJur, lembretes, cliente e advogado")
+
+# ---- cliente confirmou o lembrete de 1 hora antes: link vai para o advogado no privado
+_n = datetime.now(_tz.utc)
+
+
+class ZP(ZG):
+    def __init__(s, msgs): super().__init__(); s.msgs = msgs
+    def chamar(s, f, **a):
+        s.env.append((f, a))
+        if f == "buscar_conversa_por_telefone":
+            return {"conversa": {"id": "c1", "contact": {"id": "k1", "name": "Hana"}}}
+        if f == "ler_conversa":
+            return {"messages": s.msgs}
+        return {}
+
+
+hist = [{"sender": "USER", "createdAt": (_n - _td(minutes=40)).isoformat().replace("+00:00", "Z"),
+         "content": "*Annie*:\nOlá, Hana! Passando para confirmar nosso atendimento de hoje às 13h00 com a Dra. "
+                    "Fernanda Mesquita. O link da videochamada é: https://meet.google.com/abc-defg-hij — é só clicar."},
+        {"sender": "CONTACT", "createdAt": (_n - _td(minutes=35)).isoformat().replace("+00:00", "Z"),
+         "content": "Sim, confirmo!"}]
+d._presenca_avisada.clear()
+zp = ZP(hist)
+d.avisar_presenca(zp, d.Conversas(zp), [{"nome": "Hana", "tel": "5594900000001"}], {"mensagens": []}, _n, {})
+envios = [a for f, a in zp.env if f == "enviar_mensagem"]
+assert envios and envios[0]["numero"] == "5594991742534" and "meet.google.com/abc-defg-hij" in envios[0]["texto"]
+zp2 = ZP(hist)
+d.avisar_presenca(zp2, d.Conversas(zp2), [{"nome": "Hana", "tel": "5594900000001"}], {"mensagens": []}, _n, {})
+assert not [f for f, a in zp2.env if f == "enviar_mensagem"]
+print("OK — presença confirmada: link ao advogado uma vez")

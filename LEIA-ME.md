@@ -62,6 +62,33 @@ pode entrar aqui**. O que garante isso:
   atendimento no EasyJur, agenda os lembretes e confirma no grupo, sem IA.
   O advogado padrão é o da última oferta feita ao lead.
 
+## Google Agenda pelo despachante (ponte na conta do escritório)
+
+Ao gravar uma reunião, o despachante cria o evento no Google Agenda do
+escritório com link do Meet (convida a Dra. Fernanda ou o Dr. Lucas; a Dra.
+Danielle não, porque usa Outlook), põe o link na descrição e no local do
+atendimento no EasyJur, manda ao cliente a confirmação com o link, coloca o
+link nos lembretes (8h e 1 hora antes) e avisa o advogado no privado.
+Quando o cliente responde "sim/confirmo" ao lembrete de 1 hora antes, o
+advogado recebe de novo o link no privado.
+
+A ponte é o script `ponte_google_agenda.gs`, instalado UMA vez em
+https://script.google.com com a conta do escritório:
+1. Novo projeto › colar o conteúdo de `ponte_google_agenda.gs`.
+2. Configurações do projeto › marcar "Mostrar arquivo de manifesto
+   appsscript.json" › colar nele o conteúdo de `ponte_google_agenda.appsscript.json`.
+3. Executar a função `configurar` › autorizar › copiar a chave mostrada no
+   registro de execução.
+4. Implantar › Nova implantação › App da Web › Executar como: eu · Quem pode
+   acessar: qualquer pessoa › copiar o endereço do app.
+5. No GitHub, Settings › Secrets › Actions: criar `GOOGLE_AGENDA_URL` (o
+   endereço) e `GOOGLE_AGENDA_CHAVE` (a chave).
+Sem esses dois segredos, nada quebra: o auditor continua criando o evento.
+
+Sala aberta: o script tenta deixar a sala do Meet com acesso aberto (quem tem o
+link entra sem pedir permissão). O aviso no grupo diz se conseguiu. Contas
+Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
+
 ## Secretaria sem IA (`secretaria.py`)
 
 Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA:
