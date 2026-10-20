@@ -8,6 +8,9 @@ Roda dentro do plantão do despachante, a cada 2 minutos. Não usa nenhuma IA.
      TAREFA 4 05/10 texto · AGENDAR 10/10 14h assunto · MINHA AGENDA · AGENDA Lucas
 2. APROVAÇÕES DO RELATÓRIO "📋 PENDÊNCIAS DR. LUCAS" (17h30):
      OK 2 · OK 1 3 · OK TODAS · EDITAR 2: texto · NÃO 2
+3. AVISO AO CLIENTE (os três advogados), a partir dos rascunhos "📲 Para o cliente"
+   do resumo matinal (itens 1, A1, M1) e do retorno mensal (itens T1, T2...):
+     CLIENTE 1 A2 · CLIENTE 3: texto do advogado · CLIENTE TODOS · CLIENTE T TODOS
 
 Qualquer outra mensagem é ignorada (fica para as rotinas com IA). Cada comando
 é executado uma vez só: a resposta do escritório leva a marca "#<id da
@@ -24,8 +27,10 @@ BRT = timezone(timedelta(hours=-3))
 LUCAS_CONTROLADORIA = 344268
 
 ADVOGADAS_RESUMO = [
-    {"chave": "fernanda", "nome": "Dra. Fernanda", "tel": "5594991742534", "id": 378457},
-    {"chave": "danielle", "nome": "Dra. Danielle", "tel": "5594992048054", "id": 344269},
+    {"chave": "fernanda", "nome": "Dra. Fernanda", "tel": "5594991742534", "id": 378457,
+     "assinatura": "*Dra. Fernanda Mesquita:*"},
+    {"chave": "danielle", "nome": "Dra. Danielle", "tel": "5594992048054", "id": 344269,
+     "assinatura": "*Dra. Danielle Esteves:*"},
 ]
 DR_LUCAS = {"chave": "lucas", "nome": "Dr. Lucas", "tel": "5524992432455", "id": 344268,
             "assinatura": "*Dr. Lucas:*", "etiqueta": "PENDÊNCIA LUCAS"}
@@ -163,12 +168,70 @@ def resumo_vigente(msgs, antes_de):
     return ultimo, itens_do_resumo(texto)
 
 
+# ------------------------------------------------------------------ rascunhos para o cliente
+# Cada item do resumo matinal (1, A1, M1) ou do retorno mensal (T1, T2...) pode trazer:
+#    📲 Para o cliente *Maria* (📞 5594991234567):
+#    "Olá, Maria! ..."
+RE_ITEM_CLI = re.compile(r"^\s*\*?([AMT]?\d{1,3})\.\s")
+RE_PARA_CLI = re.compile(r"📲[^\n]*?\*([^*\n]+)\*[^\n]*?📞\s*\+?(\d{12,13})")
+RE_TEXTO_CLI = re.compile(r"^\s*[\"“](.+?)[\"”]\s*$")
+RE_CLI_ENVIADO = re.compile(r"✅ Cliente avisado: item ([AMT]?\d{1,3})\b")
+INICIO_RETORNO = "🗓️ *Retorno mensal"
+RE_LISTA_CLI = re.compile(r"\b([amt]?\d{1,3})\b", re.I)
+
+
+def rascunhos_cliente(texto):
+    """{'1': {'nome': 'Maria', 'tel': '5594...', 'texto': 'Olá, Maria!...'}, 'T2': {...}}"""
+    saida, atual, espera = {}, None, False
+    for linha in texto.splitlines():
+        m = RE_ITEM_CLI.match(linha)
+        if m:
+            atual, espera = m.group(1).upper(), False
+            continue
+        p = RE_PARA_CLI.search(linha)
+        if p and atual:
+            saida[atual] = {"nome": p.group(1).strip(), "tel": p.group(2), "texto": None}
+            espera = True
+            continue
+        t = RE_TEXTO_CLI.match(linha)
+        if t and espera:
+            saida[atual]["texto"] = t.group(1).strip()
+            espera = False
+    return saida
+
+
+def rascunhos_vigentes(msgs, antes_de):
+    """Rascunhos do resumo matinal e do retorno mensal mais recentes (até 4 dias) e os já enviados."""
+    rascunhos, enviados = {}, set()
+    for inicio, exige in (("*Bom dia, Dra.", "🔖"), (INICIO_RETORNO, "📲")):
+        envs = [m for m in msgs if m.get("sender") != "CONTACT" and (m.get("content") or "").startswith(inicio)
+                and exige in (m.get("content") or "") and m["createdAt"] < antes_de]
+        if not envs:
+            continue
+        ultimo = ler_iso(envs[-1]["createdAt"])
+        if ler_iso(antes_de) - ultimo > timedelta(days=4):
+            continue
+        texto = "\n".join(m["content"] for m in envs if ultimo - ler_iso(m["createdAt"]) < timedelta(minutes=30))
+        novos = rascunhos_cliente(texto)
+        rascunhos.update(novos)
+        for m in msgs:  # confirmações "✅ Cliente avisado: item 2" depois deste resumo/retorno
+            if m.get("sender") != "CONTACT" and ler_iso(m["createdAt"]) > ultimo:
+                enviados |= {n for n in RE_CLI_ENVIADO.findall(m.get("content") or "") if n in novos}
+    return rascunhos, enviados
+
+
 RE_LISTA_ITENS = re.compile(r"\b([am]?\d{1,3})\b", re.I)
 
 
 def classificar_linha(linha):
     """Devolve (comando, resto) se a linha está num dos formatos aceitos; senão None."""
     n = norm(linha).rstrip(".!")
+    m = re.match(r"^cliente\s+([amt]?\d{1,3})\s*[:\-]\s*\S", n)
+    if m:
+        return ("CLIENTE_TEXTO", linha.strip())
+    m = re.match(r"^cliente\s+(.+)$", n)
+    if m and re.fullmatch(r"(t\s+)?tod[oa]s|([amt]?\d{1,3}[\s,e]*)+", m.group(1).strip()):
+        return ("CLIENTE", m.group(1).strip())
     if n in ("minha agenda",):
         return ("MINHA AGENDA", "")
     m = re.match(r"^agenda\s+(?:da |do |de )?(?:dra?\.?\s+)?(\w+)$", n)
@@ -196,8 +259,9 @@ def itens_citados(resto):
 class Execucao:
     """Executa os comandos de uma advogada e junta as linhas de resposta."""
 
-    def __init__(self, ej_fn, adv, hoje, itens):
+    def __init__(self, ej_fn, adv, hoje, itens, zaia=None, rascunhos=None, enviados=None):
         self.ej_fn, self.adv, self.hoje, self.itens, self.linhas = ej_fn, adv, hoje, itens, []
+        self.zaia, self.rascunhos, self.enviados = zaia, rascunhos or {}, enviados or set()
 
     @property
     def ej(self):
@@ -330,6 +394,39 @@ class Execucao:
         self.linhas.append(f"📅 Agendado: {DIAS_SEMANA[dia.weekday()]} {ddmm(dia)} {ini.replace(':', 'h')} — "
                            f"{assunto} ({tipo.lower()}, id {novo}){extra}")
 
+    def enviar_cliente(self, num, texto_editado=None):
+        r = self.rascunhos.get(num)
+        if not r:
+            self.linhas.append(f"❓ O item {num} não tem rascunho para o cliente (sem celular no cadastro?).")
+            return
+        if num in self.enviados:
+            self.linhas.append(f"⚠️ O item {num} já foi enviado a {r['nome']}. Para outra mensagem, peça ao assistente.")
+            return
+        texto = texto_editado or r["texto"]
+        if not texto or "⟨" in texto:
+            self.linhas.append(f"❓ O rascunho do item {num} está incompleto. Responda CLIENTE {num}: seu texto")
+            return
+        self.zaia.chamar("enviar_mensagem", assinatura="ia", numero=r["tel"], texto=f"{self.adv['assinatura']}\n{texto}")
+        self.enviados.add(num)
+        self.linhas.append(f"✅ Cliente avisado: item {num} — {r['nome']}")
+
+    def cliente(self, resto):
+        r = norm(resto)
+        if re.fullmatch(r"t\s+tod[oa]s", r):
+            nums = [k for k in self.rascunhos if k.startswith("T")]
+        elif re.fullmatch(r"tod[oa]s", r):
+            nums = [k for k in self.rascunhos if not k.startswith("T")]
+        else:
+            nums = [x.upper() for x in RE_LISTA_CLI.findall(resto)]
+        if not nums:
+            self.linhas.append("❓ Não há rascunhos para clientes no resumo mais recente.")
+        for num in nums:
+            self.enviar_cliente(num)
+
+    def cliente_texto(self, linha):
+        m = re.match(r"^\s*\*?cliente\s+([amt]?\d{1,3})\s*[:\-]\s*(.+)$", linha, re.I | re.S)
+        self.enviar_cliente(m.group(1).upper(), m.group(2).strip().rstrip("*").strip())
+
     def agenda(self, quem_id, titulo):
         fim = self.hoje + timedelta(days=1)
         itens = (self.ej.chamar("list_agenda", id_responsavel_qualquer=quem_id, data_interna_inicio=self.hoje.isoformat(),
@@ -349,7 +446,22 @@ class Execucao:
         self.linhas.append("\n".join(linhas))
 
 
-def comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem):
+def linhas_de_comando(texto):
+    """[(linha, (comando, resto))]; o texto de "CLIENTE 2: ..." pode continuar nas linhas seguintes."""
+    saida = []
+    for l in (texto or "").splitlines():
+        if not l.strip():
+            continue
+        c = classificar_linha(l)
+        if c:
+            saida.append((l, c))
+        elif saida and saida[-1][1][0] == "CLIENTE_TEXTO":
+            saida[-1] = (saida[-1][0] + "\n" + l, saida[-1][1])
+    return saida
+
+
+def comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem, so_cliente=False):
+    """so_cliente: no privado do Dr. Lucas (sem resumo matinal), só os comandos CLIENTE."""
     ja = "\n".join(m.get("content") or "" for m in msgs if m.get("sender") != "CONTACT")
     hoje = agora.astimezone(BRT).date()
     for m in msgs:
@@ -358,16 +470,22 @@ def comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem):
         quando = ler_iso(m["createdAt"])
         if quando < COMECO or agora - quando > JANELA_COMANDO or marca(m) in ja or m["id"] in _feitos:
             continue
-        linhas = [(l, classificar_linha(l)) for l in (m.get("content") or "").splitlines() if l.strip()]
-        linhas = [(l, c) for l, c in linhas if c]
+        linhas = linhas_de_comando(m.get("content"))
+        if so_cliente:
+            linhas = [(l, c) for l, c in linhas if c[0].startswith("CLIENTE")]
         if not linhas:
             continue
         _, itens = resumo_vigente(msgs, m["createdAt"])
+        rascunhos, enviados = rascunhos_vigentes(msgs, m["createdAt"])
         _feitos.add(m["id"])
-        exe = Execucao(ej_fn, adv, hoje, itens)
+        exe = Execucao(ej_fn, adv, hoje, itens, zaia, rascunhos, enviados)
         for linha, (cmd, resto) in linhas:
             try:
-                if cmd in ("LIDA", "MANTER", "PRAZO", "TAREFA") and not itens:
+                if cmd == "CLIENTE":
+                    exe.cliente(resto)
+                elif cmd == "CLIENTE_TEXTO":
+                    exe.cliente_texto(linha)
+                elif cmd in ("LIDA", "MANTER", "PRAZO", "TAREFA") and not itens:
                     exe.linhas.append(f"❓ Não achei resumo recente para \"{linha.strip()[:40]}\".")
                 elif cmd == "LIDA":
                     exe.lida(resto)
@@ -533,6 +651,7 @@ def rodada(zaia, ej_fn, agora=None, contagem=None):
                 comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem)
             else:
                 aprovacoes_lucas(zaia, msgs, agora, contagem)
+                comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem, so_cliente=True)
             _estado["visto"][chave] = conv.get("lastMessageAt")
         except Exception as erro:
             if type(erro).__name__ == "OrcamentoEasyJur":

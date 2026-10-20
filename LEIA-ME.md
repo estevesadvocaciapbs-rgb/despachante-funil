@@ -99,6 +99,22 @@ Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA
   `AGENDA Lucas`. PRAZO cria a data interna 2 dias úteis antes da fatal.
 - **Aprovações do relatório de pendências do Dr. Lucas**: `OK 2`, `OK 1 3`,
   `OK TODAS`, `EDITAR 2: texto`, `NÃO 2`.
+- **Aviso ao cliente** (os três advogados): `CLIENTE 1 A2` envia ao cliente o
+  rascunho "📲 Para o cliente" do item; `CLIENTE 3: texto` envia o texto do
+  advogado; `CLIENTE TODOS` (itens do resumo) e `CLIENTE T TODOS` (retorno
+  mensal). Sai assinado pelo advogado. Item já enviado não sai de novo.
+
+## Acompanhamento de clientes (desde 20/10/2026)
+
+1. **Andamento ou publicação**: o resumo matinal (rotina com IA, 7h30) põe, em
+   cada item com cliente do escritório, um rascunho em linguagem simples para o
+   cliente. Nada sai sem `CLIENTE n` do advogado.
+2. **Retorno mensal** (`retorno.py`, sem IA): de segunda a sexta, entre 9h e 11h,
+   pega a fatia do dia dos clientes com processo ativo (cada cliente cai num dia a
+   cada 20 dias úteis). Quem não recebeu mensagem assinada por advogado nos
+   últimos 25 dias entra numa lista "🗓️ Retorno mensal aos clientes" (itens T1,
+   T2...) enviada ao advogado responsável, com rascunho montado da última
+   movimentação. Custo: ~8 chamadas ao EasyJur por dia.
 
 Só entende esses formatos exatos; qualquer outra frase fica para o assistente
 com IA. Cada comando é executado uma vez: a resposta leva a marca `#número` da

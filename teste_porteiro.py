@@ -120,3 +120,12 @@ for _t, _esp in [("Insira na minha agenda , em tarefas , para eu analisar\nA doc
                  ("A procuração é da representante da filha do Alan.", False)]:
     assert bool(p.RE_PEDIDO_GRUPO.search(p.norm(_t))) == _esp, _t
 print("OK — verbos de pedido no grupo (insira, inclua, depois de cumprimento)")
+
+# CLIENTE é executado pela secretaria sem IA: não acorda o Claude (nem com o texto em várias linhas)
+assert p.resolvido_pelo_codigo("CLIENTE 1 A2", "fernanda")
+assert p.resolvido_pelo_codigo("CLIENTE 2: Olá, Maria!\nSaiu a sentença.", "danielle")
+assert p.resolvido_pelo_codigo("CLIENTE T1", "lucas")
+# no privado do Dr. Lucas, AGENDAR não é da secretaria: tem de acordar o Claude
+assert not p.resolvido_pelo_codigo("Agende reunião com a Maria dia 22/10 às 14h", "lucas")
+assert p.resolvido_pelo_codigo("Agende reunião com a Maria dia 22/10 às 14h", "fernanda")
+print("OK — porteiro x CLIENTE")

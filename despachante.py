@@ -1456,6 +1456,13 @@ def main():
             _avisar_orcamento(zaia, erro)
         except Exception as erro:
             log(f"secretaria falhou: {type(erro).__name__}")
+        try:  # retorno mensal: rascunhos de notícia aos clientes sem contato há 25 dias, para o advogado aprovar
+            import retorno
+            retorno.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), contagem)
+        except OrcamentoEasyJur as erro:
+            _avisar_orcamento(zaia, erro)
+        except Exception as erro:
+            log(f"retorno mensal falhou: {type(erro).__name__}")
         try:  # porteiro: sinaliza ao Claude só quando chega pedido novo de advogado
             import porteiro
             porteiro.rodada(zaia, datetime.now(timezone.utc), contagem, conversas_lidas=lidas)

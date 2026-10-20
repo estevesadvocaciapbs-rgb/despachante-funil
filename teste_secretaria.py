@@ -179,3 +179,113 @@ assert s.data_br("13/10", date(2026, 10, 19)) == date(2027, 10, 13)
 assert s.data_br("20/10", date(2026, 10, 19)) == date(2026, 10, 20)
 assert s.horas("21/10 as 16:00") == ("16:00", None) and s.horas("19/10 14h30 até 15h") == ("14:30", "15:00")
 print("OK — datas e horas")
+
+# ---- aviso ao cliente a partir do resumo (CLIENTE 1 / CLIENTE A1: texto)
+RESUMO_CLI = RESUMO.replace(
+    "   🔖 P-7925421011\n",
+    "   🔖 P-7925421011\n   📲 Para o cliente *Fulano* (📞 5594900000011):\n"
+    "   \"Olá, Fulano! Saiu uma intimação no seu processo e já estamos cuidando.\"\n").replace(
+    "   🔖 A-111,112\n",
+    "   🔖 A-111,112\n   📲 Para o cliente *Ciclano* (📞 5594900000012):\n   \"Olá, Ciclano! ⟨completar⟩\"\n")
+ras = s.rascunhos_cliente(RESUMO_CLI)
+assert ras["1"] == {"nome": "Fulano", "tel": "5594900000011",
+                    "texto": "Olá, Fulano! Saiu uma intimação no seu processo e já estamos cuidando."}
+assert "2" not in ras and ras["A1"]["tel"] == "5594900000012"
+assert s.itens_do_resumo(RESUMO_CLI)["1"]["ref"] == ("P", "7925421011")  # o 📲 não atrapalha o LIDA
+assert s.classificar_linha("Cliente 1 e A1")[0] == "CLIENTE"
+assert s.classificar_linha("CLIENTE T TODOS")[0] == "CLIENTE"
+assert s.classificar_linha("cliente 2: Olá, Beltrana!")[0] == "CLIENTE_TEXTO"
+assert s.classificar_linha("cliente ligou hoje") is None
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
+                      msg(30, "CONTACT", "CLIENTE 1 A1\nLIDA 2", "2026-10-19T13:00:00.000Z")])
+assert z.enviadas[0] == ("5594900000011", "*Dra. Fernanda Mesquita:*\nOlá, Fulano! Saiu uma intimação no seu "
+                                          "processo e já estamos cuidando.")
+conf = z.enviadas[-1][1]
+assert "✅ Cliente avisado: item 1 — Fulano" in conf and "❓ O rascunho do item A1 está incompleto" in conf
+assert "✅ Lida: item 2" in conf and len(z.enviadas) == 2
+# repetir CLIENTE 1 depois do envio não manda de novo
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
+                      msg(31, "AGENT", conf, "2026-10-19T13:01:00.000Z"),
+                      msg(32, "CONTACT", "cliente 1", "2026-10-19T13:30:00.000Z")])
+assert len(z.enviadas) == 1 and "já foi enviado" in z.enviadas[0][1]
+# texto do advogado, em duas linhas
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
+                      msg(33, "CONTACT", "CLIENTE A1: Olá, Ciclano!\nO juiz marcou audiência.", "2026-10-19T13:00:00.000Z")])
+assert z.enviadas[0] == ("5594900000012", "*Dra. Fernanda Mesquita:*\nOlá, Ciclano!\nO juiz marcou audiência.")
+# item sem rascunho
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
+                      msg(34, "CONTACT", "cliente 2", "2026-10-19T13:00:00.000Z")])
+assert len(z.enviadas) == 1 and "não tem rascunho" in z.enviadas[0][1]
+print("OK — CLIENTE a partir do resumo")
+
+# ---- retorno mensal (itens T) no privado do Dr. Lucas: só CLIENTE é executado ali
+import retorno as rt
+proc = {"numero": "0810786-75.2026.8.14.0040", "ultimo_andamento": "10/09/2026 - Conclusos para julgamento"}
+assert "está com o juiz" in rt.frase_processo(proc) and "10/09/2026" in rt.frase_processo(proc)
+assert rt.frase_processo({"tipo_processo": "administrativo"}).startswith("o seu requerimento")
+partes = rt.mensagens(rt.ADVOGADOS[344268], [("Maria Teste", "5594900000021", [proc])])
+assert len(partes) == 1 and partes[0].startswith(s.INICIO_RETORNO)
+ras = s.rascunhos_cliente(partes[0])
+assert ras["T1"]["tel"] == "5594900000021" and ras["T1"]["texto"].startswith("Olá, Maria! Passando para dar notícias")
+grande = rt.mensagens(rt.ADVOGADOS[344269], [(f"Cliente {i}", f"55949000001{i:02d}", [proc]) for i in range(20)])
+assert len(grande) > 1 and all(len(p) < 3800 for p in grande) and "(1/" in grande[0]
+assert len(s.rascunhos_cliente("\n".join(grande))) == 20
+s._feitos.clear()
+z = FakeZ()
+conv = [msg(40, "AGENT", partes[0], "2026-10-19T12:00:00.000Z"),
+        msg(41, "CONTACT", "CLIENTE T TODOS\nAGENDAR 22/10 14h teste", "2026-10-19T13:00:00.000Z")]
+s.comandos_do_resumo(z, lambda: FakeEJ(), s.DR_LUCAS, conv, AGORA, {}, so_cliente=True)
+assert z.enviadas[0][0] == "5594900000021" and z.enviadas[0][1].startswith("*Dr. Lucas:*\nOlá, Maria!")
+assert "📅" not in z.enviadas[-1][1]  # o AGENDAR do Dr. Lucas fica para o Secretário com IA
+# fatia: cada cliente cai em exatamente um dia a cada 20 dias úteis
+from datetime import timedelta as _td
+dias = [date(2026, 10, 19) + _td(days=i) for i in range(28)]
+uteis = [d for d in dias if d.weekday() < 5]
+assert sum(rt.da_fatia(686470823, d) for d in uteis[:20]) == 1
+print("OK — retorno mensal")
+
+# ---- retorno mensal de ponta a ponta (sistemas falsos)
+HOJE_R = datetime(2026, 10, 20, 12, 30, tzinfo=timezone.utc)  # terça, 9h30 em Belém
+idx = rt.dia_util_indice(date(2026, 10, 20)) % rt.CICLO
+cid_sim, cid_nao, cid_contato = 1000 * rt.CICLO + idx, 1000 * rt.CICLO + (idx + 1) % rt.CICLO, 2000 * rt.CICLO + idx
+
+
+class EJR(FakeEJ):
+    def chamar(self, f, **a):
+        self.chamadas.append((f, a))
+        if f == "list_processos":
+            return {"data": [{"id_cliente": c, "nome_cliente": n, "id_advogado": adv, "numero": "0001-1",
+                              "ultimo_andamento": "01/09/2026 - Juntada de petição"}
+                             for c, n, adv in ((cid_sim, "JOANA TESTE", 378457), (cid_nao, "PEDRO", 344269),
+                                               (cid_contato, "RITA TESTE", 354290))],
+                    "meta": {"total_pages": 1}}
+        if f == "get_pessoa":
+            return {"data": {"celular": "(94) 99000-%04d" % (a["pessoa_id"] // 1000)}}
+        return super().chamar(f, **a)
+
+
+class ZR(FakeZ):
+    def chamar(self, f, **a):
+        if f == "buscar_conversa_por_telefone":
+            return {"conversa": {"id": a["telefone"], "lastMessageAt": "2026-10-15T12:00:00Z"}}
+        if f == "ler_conversa":
+            if a["conversaId"].endswith("%04d" % (cid_contato // 1000)):  # Rita recebeu mensagem da advogada
+                return {"messages": [msg(50, "USER", "*Dra Danielle Esteves*: Olá!", "2026-10-10T12:00:00Z")]}
+            return {"messages": []}
+        return super().chamar(f, **a)
+
+
+rt._estado["feito"] = None
+z, ej = ZR(), EJR()
+rt.rodada(z, lambda: ej, HOJE_R, {})
+assert len(z.enviadas) == 1 and z.enviadas[0][0] == "5594991742534"   # só a Joana, para a Dra. Fernanda
+assert "*Joana Teste*" in z.enviadas[0][1] and "foram juntados documentos" in z.enviadas[0][1]
+assert sum(1 for c in ej.chamadas if c[0] == "get_pessoa") == 2          # Pedro nem é consultado hoje
+n_antes = len(ej.chamadas)
+rt.rodada(z, lambda: ej, HOJE_R, {})                                    # segunda chamada no mesmo dia: nada
+assert len(ej.chamadas) == n_antes and len(z.enviadas) == 1
+print("OK — retorno mensal de ponta a ponta")
