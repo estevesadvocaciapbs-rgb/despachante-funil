@@ -5,6 +5,8 @@ import porteiro as p
 INICIO = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
 chamadas = []
 p.chamar_claude = lambda: chamadas.append(1) or True
+fin = []
+p.avisar_financeiro = lambda: fin.append(1) or True
 
 
 def m(sender, texto, minutos, nome=None, tipo="CHAT"):
@@ -28,8 +30,10 @@ class FakeZ:
 
 
 def novo_plantao():
-    p._estado.update(ultima=None, desde=None, visto={}, chamado_em=None, pendente=False)
+    p._estado.update(ultima=None, desde=None, visto={}, chamado_em=None, pendente=False,
+                     fin_chamado_em=None, fin_pendente=False)
     chamadas.clear()
+    fin.clear()
 
 
 FERN = "5594991742534"
@@ -129,3 +133,21 @@ assert p.resolvido_pelo_codigo("CLIENTE T1", "lucas")
 assert not p.resolvido_pelo_codigo("Agende reunião com a Maria dia 22/10 às 14h", "lucas")
 assert p.resolvido_pelo_codigo("Agende reunião com a Maria dia 22/10 às 14h", "fernanda")
 print("OK — porteiro x CLIENTE")
+
+# grupo "Financeiro Escritório": mensagem de advogado acorda só o financeiro (não o Secretário/Respostas)
+novo_plantao()
+z = FakeZ(grupos={"claude-grupo-18": []})
+p.rodada(z, INICIO)
+z.grupos["claude-grupo-18"] = [m("CONTACT", "Rebeca pagou 500 de entrada hoje", 1, "Fernanda Mesquita"),
+                               m("USER", "oi", 1)]
+p.rodada(z, INICIO + timedelta(minutes=2))
+assert fin == [1] and not chamadas
+p.rodada(z, INICIO + timedelta(minutes=4))
+assert fin == [1]  # a mesma mensagem não chama de novo
+z.grupos["claude-grupo-18"].append(m("USER", "💰 *LANÇAMENTO F3*", 5))  # mensagem do sistema não chama
+p.rodada(z, INICIO + timedelta(minutes=12))
+assert fin == [1]
+z.grupos["claude-grupo-18"].append(m("CONTACT", "ok f3", 13, "Lucas Seoane"))
+p.rodada(z, INICIO + timedelta(minutes=14))
+assert fin == [1, 1] and not chamadas
+print("OK — grupo do financeiro acorda só a rotina financeira")

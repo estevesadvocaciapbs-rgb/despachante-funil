@@ -133,8 +133,13 @@ novo; assim a rodada vazia quase não gasta. Em grupo, só conta mensagem de
 advogado dirigida ao sistema (verbo de ordem, código ou menção ao assistente).
 Teste manual: Actions › "Gravar sinal para o Claude (teste manual)" › Run workflow.
 
+Grupo "Financeiro Escritório" (claude-grupo-18, desde 20/10/2026): qualquer mensagem
+de advogado ali grava a hora em `financeiro.json` (mesmo ramo), que só a rotina
+financeira lê. Assim a conversa do financeiro não acorda o Secretário nem as Respostas.
+
 O porteiro também grava, a cada 5 minutos, o arquivo `despesas.json` no mesmo ramo
-`sinal`: a lista de códigos de despesas e repasses já aprovados no grupo AUTOMAÇÃO
+`sinal`: a lista de códigos de despesas e repasses já aprovados no grupo Financeiro
+Escritório (ou, para os antigos, no AUTOMAÇÃO)
 ("✅ F7 despesa aprovada…") e ainda não lançados ("🧾 F7 de 19/10 lançada…"). Só
 códigos, sem nenhum dado. A tarefa noturna do computador do escritório (22h) lê esse
 arquivo e só abre o EasyJur no Chrome quando a lista não está vazia.

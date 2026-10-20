@@ -28,6 +28,9 @@ ESPERA_ENTRE_CHAMADAS = timedelta(minutes=5)   # uma rodada do Claude leva 1 a 3
 GRUPOS = ["claude-grupo-1", "claude-grupo-17"]
 PRIVADOS = {"5594992048054": "danielle", "5594991742534": "fernanda", "5524992432455": "lucas"}
 RAMO_SINAL, ARQUIVO_SINAL = "sinal", "sinal.json"
+GRUPO_FINANCEIRO = "claude-grupo-18"     # "Financeiro Escritório" (os 3 advogados): pedidos e aprovações F
+ARQUIVO_FINANCEIRO = "financeiro.json"   # sinal só da rotina financeira (conversa ali não acorda Secretário/Respostas)
+GRUPOS_DESPESAS = [GRUPO_FINANCEIRO, "claude-grupo-17"]  # o 17 fica enquanto houver F antigo aprovado lá
 ARQUIVO_DESPESAS = "despesas.json"          # despesas/repasses aprovados ainda não lançados (só códigos)
 INTERVALO_DESPESAS = timedelta(minutes=5)
 JANELA_DESPESAS = timedelta(days=7)
@@ -50,7 +53,7 @@ RE_PEDIDO_GRUPO = re.compile(
     r"de baixa|dar baixa|da baixa|por favor)\b")
 
 _estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False,
-           "despesas_em": None, "despesas": None}
+           "fin_chamado_em": None, "fin_pendente": False, "despesas_em": None, "despesas": None}
 
 
 def _log(msg):
@@ -140,6 +143,13 @@ def chamar_claude():
     return gravar_no_ramo(ARQUIVO_SINAL, conteudo, "sinal: pedido novo")
 
 
+def avisar_financeiro():
+    """Sinal só para a rotina financeira: mensagem nova de advogado no grupo do financeiro."""
+    agora = datetime.now(timezone.utc).replace(microsecond=0)
+    conteudo = json.dumps({"ultimo_pedido": agora.isoformat().replace("+00:00", "Z")}) + "\n"
+    return gravar_no_ramo(ARQUIVO_FINANCEIRO, conteudo, "sinal: pedido no grupo do financeiro")
+
+
 def gravar_no_ramo(arquivo, conteudo, mensagem):
     """Grava um arquivo pequeno (sem dados de cliente) no ramo "sinal" do repositório."""
     import base64
@@ -191,12 +201,14 @@ def despesas_pendentes(msgs, agora):
 
 
 def atualizar_despesas(zaia, agora):
-    """A cada 5 min confere o grupo AUTOMAÇÃO e grava despesas.json só quando a lista muda."""
+    """A cada 5 min confere os grupos do financeiro e grava despesas.json só quando a lista muda."""
     if _estado["despesas_em"] and agora - _estado["despesas_em"] < INTERVALO_DESPESAS:
         return
     _estado["despesas_em"] = agora
+    msgs = []
     try:
-        msgs = (zaia.chamar("ler_grupo", grupoId="claude-grupo-17", limit=100) or {}).get("mensagens", [])
+        for g in GRUPOS_DESPESAS:
+            msgs += (zaia.chamar("ler_grupo", grupoId=g, limit=100) or {}).get("mensagens", [])
     except Exception as erro:
         _log(f"despesas: grupo não lido: {type(erro).__name__}")
         return
@@ -239,6 +251,18 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
             achou += sum(1 for m in novos(msgs, _estado["desde"], g) if pedido_no_grupo(m))
         except Exception as erro:
             _log(f"grupo não lido: {type(erro).__name__}")
+    try:  # grupo do financeiro: qualquer mensagem de advogado (pedido, comprovante, OK F3) acorda só o financeiro
+        msgs = (zaia.chamar("ler_grupo", grupoId=GRUPO_FINANCEIRO, limit=15) or {}).get("mensagens", [])
+        if any(e_advogado_em_grupo(m) for m in novos(msgs, _estado["desde"], GRUPO_FINANCEIRO)):
+            _estado["fin_pendente"] = True
+    except Exception as erro:
+        _log(f"grupo do financeiro não lido: {type(erro).__name__}")
+    if _estado["fin_pendente"] and not (_estado["fin_chamado_em"]
+                                        and agora - _estado["fin_chamado_em"] < ESPERA_ENTRE_CHAMADAS):
+        if avisar_financeiro():
+            _estado.update(fin_chamado_em=agora, fin_pendente=False)
+            contagem["financeiro_chamado"] = contagem.get("financeiro_chamado", 0) + 1
+            _log("pedido no grupo do financeiro: rotina financeira chamada")
     if achou:
         _estado["pendente"] = True
     if not _estado["pendente"]:
