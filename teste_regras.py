@@ -437,3 +437,11 @@ _t = ("🆕 NOVO LEAD · Previdenciário — Maria Teste\nℹ️ DÚVIDA INFORMA
 assert d.classificar(_t) == (None, "informativo")
 assert d.classificar("‼️NOVA OPORTUNIDADE‼️\nÁREA: Previdenciário — salário-maternidade")[0] == "previdenciario"
 print("OK — dúvida informativa não recebe oferta")
+
+# ---- a Za.Ia passou a exigir "assinatura" no enviar_mensagem (20/10/2026): nenhum envio sem ela
+import re as _re, io as _io
+for _arq in ("despachante.py", "secretaria.py"):
+    _src = _io.open(_arq, encoding="utf-8").read()
+    _sem = [l for l in _src.splitlines() if '"enviar_mensagem"' in l and "assinatura=" not in l]
+    assert not _sem, (_arq, _sem)
+print("OK — todo enviar_mensagem leva assinatura")

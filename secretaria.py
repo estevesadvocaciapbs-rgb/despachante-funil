@@ -386,7 +386,7 @@ def comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem):
                     raise
                 exe.linhas.append(f"⚠️ Não consegui executar \"{linha.strip()[:40]}\": {str(erro)[:120]}")
         if exe.linhas:
-            zaia.chamar("enviar_mensagem", numero=adv["tel"], texto="\n".join(exe.linhas) + f"\n_{marca(m)}_")
+            zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto="\n".join(exe.linhas) + f"\n_{marca(m)}_")
             contagem["comandos"] = contagem.get("comandos", 0) + len(linhas)
             _log(f"{len(linhas)} comando(s) executado(s) para {adv['chave']}")
 
@@ -497,7 +497,7 @@ def aprovacoes_lucas(zaia, msgs, agora, contagem, enviar=True):
                 linhas.append(f"❓ O texto do item {num} ainda tem ⟨ ⟩. Corrija com EDITAR {num}: texto")
                 continue
             if enviar:
-                zaia.chamar("enviar_mensagem", numero=it["tel"], texto=f"{DR_LUCAS['assinatura']}\n{texto}")
+                zaia.chamar("enviar_mensagem", assinatura="ia", numero=it["tel"], texto=f"{DR_LUCAS['assinatura']}\n{texto}")
                 try:
                     tirar_etiqueta(zaia, it["tel"], DR_LUCAS["etiqueta"])
                 except Exception as erro:  # etiqueta não pode impedir a confirmação
@@ -505,7 +505,7 @@ def aprovacoes_lucas(zaia, msgs, agora, contagem, enviar=True):
             linhas.append(f"✅ Enviado para {it['nome']} (item {num})")
             contagem["respostas_lucas"] = contagem.get("respostas_lucas", 0) + 1
         if linhas:
-            zaia.chamar("enviar_mensagem", numero=DR_LUCAS["tel"], texto="\n".join(linhas) + f"\n_{marca(m)}_")
+            zaia.chamar("enviar_mensagem", assinatura="ia", numero=DR_LUCAS["tel"], texto="\n".join(linhas) + f"\n_{marca(m)}_")
             _log(f"{len(ordens)} ordem(ns) do relatório de pendências tratada(s)")
 
 

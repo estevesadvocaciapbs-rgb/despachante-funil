@@ -148,7 +148,7 @@ def avisar_lucas(zaia, texto):
     if DRY_RUN:
         return
     try:
-        zaia.chamar("enviar_mensagem", numero=TEL_ERROS, texto=texto)
+        zaia.chamar("enviar_mensagem", assinatura="ia", numero=TEL_ERROS, texto=texto)
     except Exception as e:  # o aviso nunca pode derrubar a rodada
         log(f"não consegui avisar o Dr. Lucas: {type(e).__name__}: {e}")
 
@@ -900,7 +900,7 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
         f"Lembretes ao cliente: {', '.join(agendados) if agendados else 'já havia mensagem agendada'} · {aviso_google}\n"
         f"_(aviso só para conhecimento)_{marca}"))
     try:  # o advogado responsável recebe também no privado, com o link
-        zaia.chamar("enviar_mensagem", numero=adv["tel"], texto=(
+        zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(
             f"📅 *REUNIÃO AGENDADA COM VOCÊ — {nome} ({tel})*\n"
             f"{texto_slot(inicio)} · Online · {NOME_AREA.get(area, 'área a confirmar')}\n"
             f"*Caso:* {resumo}\n" + (f"🔗 Link: {link}" if link else "🔗 Link: sai no Google Agenda em seguida")))
@@ -1072,7 +1072,7 @@ def avisar_presenca(zaia, conversas, leads, grupo17, agora, contagem):
         nome = (conv["contact"].get("name") or lead["nome"]).strip()
         if DRY_RUN:
             continue
-        zaia.chamar("enviar_mensagem", numero=adv["tel"], texto=(
+        zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(
             f"✅ *{nome} confirmou presença* no atendimento de hoje às {hora}.\n"
             + (f"🔗 Link da videochamada: {link}" if link else "🔗 Link: veja o evento no Google Agenda do escritório")))
         zaia.chamar("enviar_mensagem_grupo", grupoId="claude-grupo-17", texto=(
