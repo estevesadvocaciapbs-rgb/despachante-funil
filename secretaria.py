@@ -43,7 +43,13 @@ _feitos = set()  # ids das mensagens de comando já executadas neste plantão (s
 _feriados = {}
 
 
+_RE_TEL_LOG = re.compile(r"\+?\d{10,13}|\(?\d{2}\)?\s?9?\d{4}[-\s]\d{4}")
+_RE_EMAIL_LOG = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
 def _log(msg):
+    """O repositório é público: o log nunca mostra telefone nem e-mail."""
+    msg = _RE_EMAIL_LOG.sub("[e-mail]", _RE_TEL_LOG.sub("[tel]", str(msg)))[:300]
     print(f"[{datetime.now(BRT):%d/%m %H:%M:%S}] secretaria: {msg}", flush=True)
 
 
@@ -531,5 +537,5 @@ def rodada(zaia, ej_fn, agora=None, contagem=None):
         except Exception as erro:
             if type(erro).__name__ == "OrcamentoEasyJur":
                 raise
-            _log(f"falhou ({adv['chave']}): {type(erro).__name__}")
+            _log(f"falhou ({adv['chave']}): {type(erro).__name__}: {str(erro)[:300]}")
     return lidas

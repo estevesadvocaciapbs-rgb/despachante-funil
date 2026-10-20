@@ -254,7 +254,8 @@ class MCP:
                            "params": {"name": ferramenta, "arguments": args}})
         if not resp or "error" in resp:
             self.quebrado = True  # sessão pode ter expirado: a próxima rodada reconecta
-            raise RuntimeError(f"{self.nome}.{ferramenta}: erro na chamada")
+            detalhe = str((resp or {}).get("error", "resposta vazia"))[:300]
+            raise RuntimeError(f"{self.nome}.{ferramenta}: erro na chamada — {detalhe}")
         res = resp.get("result", {})
         if res.get("isError"):
             motivo = "".join(c.get("text", "") for c in res.get("content", []) if c.get("type") == "text")
@@ -333,6 +334,8 @@ def leads_recentes(grupo, tarefas, agora, janela_h=JANELA_LEAD_H):
 def classificar(texto):
     """Devolve (area, motivo_para_pular)."""
     sa_todo = sem_acento(texto)
+    if "duvida informativa" in sa_todo or "orientacao (sem agendamento)" in sa_todo:
+        return None, "informativo"  # ex.: salário-maternidade de empregada com carteira (só orientação)
     if "atendimento incompleto" in sa_todo:
         return None, "incompleto"
     if "violencia domestica" in sa_todo:  # vem marcado "URGENTE", mas recebe horário na hora

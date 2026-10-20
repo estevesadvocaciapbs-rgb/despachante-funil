@@ -430,3 +430,10 @@ assert d.celular_br("5594900000001") == "(94) 90000-0001"
 assert d.celular_br("559432221111") == "(94) 3222-1111"
 assert d.celular_br("94900000001") == "(94) 90000-0001"
 print("OK — celular no formato do EasyJur")
+
+# ---- salário-maternidade de empregada com carteira: só orientação, sem oferta de horário
+_t = ("🆕 NOVO LEAD · Previdenciário — Maria Teste\nℹ️ DÚVIDA INFORMATIVA — SEM AGENDAMENTO\n"
+      "CONTATO: Maria Teste (5594900000009)\nÁREA: Previdenciário — salário-maternidade")
+assert d.classificar(_t) == (None, "informativo")
+assert d.classificar("‼️NOVA OPORTUNIDADE‼️\nÁREA: Previdenciário — salário-maternidade")[0] == "previdenciario"
+print("OK — dúvida informativa não recebe oferta")
