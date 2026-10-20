@@ -112,3 +112,11 @@ assert p.despesas_pendentes(_msgs, _ag) == ["F7 de 19/10", "F8 de 19/10"], p.des
 _msgs.append({"createdAt": "2026-10-20T01:05:00.000Z", "content": "🧾 F7 de 19/10 lançada no EasyJur — despesa nº 99"})
 assert p.despesas_pendentes(_msgs, _ag) == ["F8 de 19/10"]
 print("OK — despesas aprovadas a lançar")
+
+# ---- verbos de pedido no grupo (caso real de 20/10: "Insira na minha agenda" ficou 37 min sem resposta)
+for _t, _esp in [("Insira na minha agenda , em tarefas , para eu analisar\nA documentação , hoje as 15:30 .", True),
+                 ("Bom dia, inclua na minha agenda amanhã", True), ("Por favor , desenhe", True),
+                 ("Lucas pode deixar que quando for assim ela faz", False), ("Show", False), ("Entendi", False),
+                 ("A procuração é da representante da filha do Alan.", False)]:
+    assert bool(p.RE_PEDIDO_GRUPO.search(p.norm(_t))) == _esp, _t
+print("OK — verbos de pedido no grupo (insira, inclua, depois de cumprimento)")

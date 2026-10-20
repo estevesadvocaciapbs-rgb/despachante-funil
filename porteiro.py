@@ -40,9 +40,14 @@ RE_DESP_LANCADA = re.compile(r"🧾\s*\*?F(\d+)\*?\s+de\s+(\d{2})/(\d{2})", re.I
 # Em grupo, só vale como pedido o que fala com o sistema (mesma regra do Secretário geral).
 RE_PEDIDO_GRUPO = re.compile(
     r"\b(ok|editar|nao)\s*[rsef]\s*\d|\b(assistente|automacao|annie|claude|ia|escritorio)\b|"
-    r"^(agende|agenda|marque|marca|remarque|remarca|cancele|cancela|crie|cria|anote|anota|bloqueie|"
-    r"desbloqueie|encerre|encerra|lembre|coloque|coloca|confira|responda|responde|gere|faz|faca|"
-    r"lance|lanca|cadastre|cadastra|registre|registra|de baixa|dar baixa)\b")
+    # verbo de ordem no começo da mensagem, de uma linha ou logo depois de um cumprimento ("Bom dia, insira...")
+    r"(?:^|[\n.!?,;:]\s*)(agende|agenda|agendar|marque|marca|marcar|remarque|remarca|cancele|cancela|crie|cria|"
+    r"criar|anote|anota|bloqueie|desbloqueie|encerre|encerra|lembre|coloque|coloca|ponha|poe|bote|bota|confira|"
+    r"responda|responde|gere|faz|faca|lance|lanca|lancar|cadastre|cadastra|cadastrar|registre|registra|"
+    r"insira|insere|inserir|inclua|inclui|incluir|adicione|adiciona|mande|manda|envie|envia|avise|avisa|"
+    r"informe|informa|confirme|confirma|verifique|verifica|separe|providencie|atualize|atualiza|altere|altera|"
+    r"mude|muda|troque|troca|desmarque|desmarca|transfira|encaminhe|encaminha|"
+    r"de baixa|dar baixa|da baixa|por favor)\b")
 
 _estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False,
            "despesas_em": None, "despesas": None}
