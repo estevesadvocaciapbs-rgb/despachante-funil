@@ -124,16 +124,21 @@ quando chegou mensagem nova (confere antes a hora da última mensagem).
 ## Parcelas do mês (`recebimentos.py`, desde 21/10/2026)
 
 No 1º dia útil de cada mês (8h de Belém; nova tentativa às 11h), o workflow
-"Parcelas do mês" lê no EasyJur as receitas em aberto ou vencidas com
-vencimento no mês e manda ao grupo "Financeiro Escritório" uma planilha .xlsx
-(vencimento, cliente, valor, parcela x/y, especificação, forma de pagamento,
-situação e nº da receita, com total) e um resumo com o total por semana. Se a
-Za.Ia recusar o arquivo no grupo, a mesma lista vai em texto. Não repete no mês
-(procura o resumo "📊 Parcelas a receber — mês/ano" no grupo). Para mandar de
-novo ou ver outro mês: Actions → "Parcelas do mês" → Run workflow, mês
-`AAAA-MM` (com "prévia" marcado, não conta como o envio oficial). Custo: ~30
-chamadas ao EasyJur por mês. A planilha é montada em memória; nada fica no
-repositório nem no log.
+"Parcelas do mês" lê no EasyJur as receitas em aberto e manda ao grupo
+"Financeiro Escritório" uma planilha .xlsx com duas abas: as parcelas que vencem
+no mês (vencimento, cliente, valor, parcela x/y, especificação, advogado, forma
+de pagamento, situação e nº da receita) e as **atrasadas de meses anteriores**
+(com dias em atraso), cada uma com total. Junto vai um resumo com o total por
+semana, por advogado e das atrasadas. O advogado vem do filtro `id_advogado` da
+listagem (a listagem em si não traz o campo); receita sem advogado aparece com
+"—". Se a Za.Ia recusar o arquivo no grupo, a mesma lista vai em texto. Não
+repete no mês (procura o resumo "📊 Parcelas a receber — mês/ano" no grupo).
+Para mandar de novo ou ver outro mês: Actions → "Parcelas do mês" → Run
+workflow, mês `AAAA-MM` (com "prévia" marcado, não conta como o envio oficial).
+Custo: ~55 chamadas ao EasyJur por mês. A planilha é montada em memória; nada
+fica no repositório nem no log. O arquivo vai pelo `enviar_midia`, que só aceita
+número: o código usa o ID de WhatsApp do grupo guardado no contato "Financeiro
+Escritório" da Za.Ia, e o upload precisa de User-Agent próprio (Cloudflare).
 
 ## Porteiro (`porteiro.py`)
 
