@@ -289,3 +289,12 @@ n_antes = len(ej.chamadas)
 rt.rodada(z, lambda: ej, HOJE_R, {})                                    # segunda chamada no mesmo dia: nada
 assert len(ej.chamadas) == n_antes and len(z.enviadas) == 1
 print("OK — retorno mensal de ponta a ponta")
+
+# ---- número do item com zero na frente (caso real 21/10: "lida 01", "Lida 03")
+assert s.num_item("01") == "1" and s.num_item("a02") == "A2" and s.num_item("10") == "10" and s.num_item("0") == "0"
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),
+                      msg(60, "CONTACT", "lida 01\n\nLida 02\nLIDA A01", "2026-10-19T13:00:00.000Z")])
+conf = z.enviadas[0][1]
+assert "✅ Lida: item 1" in conf and "✅ Lida: item 2" in conf and "✅ Lida: item A1" in conf and "❓" not in conf, conf
+print("OK — item com zero na frente")

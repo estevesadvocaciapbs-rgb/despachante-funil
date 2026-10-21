@@ -251,9 +251,14 @@ def classificar_linha(linha):
     return None
 
 
+def num_item(x):
+    """'01' -> '1', 'a02' -> 'A2': a advogada às vezes escreve o número do item com zero."""
+    return re.sub(r"^([AMT]?)0+(?=\d)", r"\1", x.strip().upper())
+
+
 def itens_citados(resto):
     resto = re.sub(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", " ", resto)
-    return [x.upper() for x in RE_LISTA_ITENS.findall(resto)]
+    return [num_item(x) for x in RE_LISTA_ITENS.findall(resto)]
 
 
 class Execucao:
@@ -268,6 +273,7 @@ class Execucao:
         return self.ej_fn()
 
     def item(self, num):
+        num = num_item(num)
         it = self.itens.get(num)
         if not it:
             self.linhas.append(f"❓ Não achei o item {num} no resumo mais recente.")
@@ -331,7 +337,7 @@ class Execucao:
 
     def prazo_ou_tarefa(self, cmd, linha):
         m = re.match(r"^\s*\w+\s+([AaMm]?\d{1,3})[\s,]+(.*)$", linha)
-        num, resto = m.group(1).upper(), m.group(2)
+        num, resto = num_item(m.group(1)), m.group(2)
         it = self.item(num)
         fatal = data_br(resto, self.hoje)
         if not it:
@@ -417,7 +423,7 @@ class Execucao:
         elif re.fullmatch(r"tod[oa]s", r):
             nums = [k for k in self.rascunhos if not k.startswith("T")]
         else:
-            nums = [x.upper() for x in RE_LISTA_CLI.findall(resto)]
+            nums = [num_item(x) for x in RE_LISTA_CLI.findall(resto)]
         if not nums:
             self.linhas.append("❓ Não há rascunhos para clientes no resumo mais recente.")
         for num in nums:
@@ -425,7 +431,7 @@ class Execucao:
 
     def cliente_texto(self, linha):
         m = re.match(r"^\s*\*?cliente\s+([amt]?\d{1,3})\s*[:\-]\s*(.+)$", linha, re.I | re.S)
-        self.enviar_cliente(m.group(1).upper(), m.group(2).strip().rstrip("*").strip())
+        self.enviar_cliente(num_item(m.group(1)), m.group(2).strip().rstrip("*").strip())
 
     def agenda(self, quem_id, titulo):
         fim = self.hoje + timedelta(days=1)
