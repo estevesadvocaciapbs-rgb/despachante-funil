@@ -298,3 +298,38 @@ z, ej = rodar_resumo([msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),
 conf = z.enviadas[0][1]
 assert "✅ Lida: item 1" in conf and "✅ Lida: item 2" in conf and "✅ Lida: item A1" in conf and "❓" not in conf, conf
 print("OK — item com zero na frente")
+
+# ---- resumo com assinatura "*Annie*:" na 1ª linha (caso real 21/10: caía no resumo da véspera)
+ONTEM = RESUMO.replace("0000137-11.2026.5.08.0114", "0000720-41.2025.5.08.0131")
+HOJE = "*Annie*:\n" + RESUMO_CLI
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", ONTEM, "2026-10-18T10:36:00.000Z"),
+                      msg(2, "AGENT", HOJE, "2026-10-19T10:36:00.000Z"),
+                      msg(70, "CONTACT", "Lida 01, lida 02 e lida 07\nCLIENTE 1", "2026-10-19T13:00:00.000Z")])
+conf = z.enviadas[-1][1]
+assert "✅ Lida: item 1 — 0000137-11" in conf and "0000720-41" not in conf, conf
+assert "❓ Não achei o item 7 no resumo de 19/10. Os itens dele são: 1, 2, A1, A2." in conf and "*LIDA 1 2*" in conf, conf
+assert "✅ Cliente avisado: item 1 — Fulano" in conf
+assert s.sem_assinatura("*Annie*:\n*Bom dia, Dra. X!* ☀️") == "*Bom dia, Dra. X!* ☀️"
+assert s.sem_assinatura("*Bom dia, Dra. X!* ☀️") == "*Bom dia, Dra. X!* ☀️"
+print("OK — resumo com assinatura da Annie e erro que ensina o formato")
+
+# ---- sem resumo: explica para que servem os comandos
+s._feitos.clear()
+z, ej = rodar_resumo([msg(71, "CONTACT", "LIDA 2", "2026-10-19T13:00:00.000Z")])
+assert "valem para o resumo das 7h30" in z.enviadas[0][1]
+print("OK — aviso quando não há resumo")
+
+# ---- retorno mensal enviado com assinatura: reconhecido como já enviado hoje e contato do advogado
+class ZA(FakeZ):
+    def chamar(self, f, **a):
+        if f == "buscar_conversa_por_telefone":
+            return {"conversa": {"id": "x", "lastMessageAt": "2026-10-20T12:00:00Z"}}
+        if f == "ler_conversa":
+            return {"messages": [msg(80, "AGENT", "*Annie*:\n" + s.INICIO_RETORNO + " aos clientes*\nT1...",
+                                     "2026-10-20T12:40:00Z"),
+                                 msg(81, "AGENT", "*Annie*:\n*Dra. Fernanda Mesquita:*\nOlá!", "2026-10-20T12:45:00Z")]}
+        return super().chamar(f, **a)
+assert rt.ja_enviado_hoje(ZA(), rt.ADVOGADOS[378457], date(2026, 10, 20))
+assert rt.teve_contato(ZA(), "5594900000099", HOJE_R)
+print("OK — retorno mensal reconhece mensagens com assinatura")

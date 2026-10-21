@@ -115,8 +115,9 @@ def teve_contato(zaia, tel, agora):
     for m in (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []):
         if m.get("sender") == "CONTACT" or agora - secretaria.ler_iso(m["createdAt"]) > JANELA_CONTATO:
             continue
-        if re.match(r"^\*?\s*dra?\.?\s", secretaria.norm(m.get("content"))):
-            return True
+        if any(re.match(r"^\*?\s*dra?\.?\s", secretaria.norm(t))
+               for t in (m.get("content"), secretaria.sem_assinatura(m.get("content")))):
+            return True  # "*Annie*:\n*Dra. Fernanda Mesquita:*\n..." (CLIENTE) ou "*Dra Danielle Esteves*:" (painel)
     return False
 
 
@@ -125,7 +126,7 @@ def ja_enviado_hoje(zaia, adv, hoje):
     if not conv:
         return False
     for m in (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []):
-        if (m.get("sender") != "CONTACT" and (m.get("content") or "").startswith(secretaria.INICIO_RETORNO)
+        if (m.get("sender") != "CONTACT" and secretaria.sem_assinatura(m.get("content")).startswith(secretaria.INICIO_RETORNO)
                 and secretaria.ler_iso(m["createdAt"]).astimezone(BRT).date() == hoje):
             return True
     return False

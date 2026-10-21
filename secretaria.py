@@ -153,10 +153,21 @@ def itens_do_resumo(texto):
     return {k: v for k, v in itens.items() if v["ref"]}
 
 
+RE_ASSINATURA = re.compile(r"^\s*\*[^*\n]{1,40}\*\s*:[ \t]*\n?")
+
+
+def sem_assinatura(texto):
+    """Tira a assinatura que a Za.Ia põe na 1ª linha das mensagens do sistema ("*Annie*:").
+
+    Desde 20/10/2026 o envio exige assinatura e o resumo chega como "*Annie*:\\n*Bom dia, Dra..."; sem
+    isto o resumo do dia não era reconhecido e o comando caía no resumo da véspera (caso de 21/10)."""
+    return RE_ASSINATURA.sub("", texto or "", count=1)
+
+
 def resumo_vigente(msgs, antes_de):
     """Junta as partes (1/n) do resumo matinal mais recente enviado antes do comando."""
     resumos = [m for m in msgs if m.get("sender") != "CONTACT"
-               and (m.get("content") or "").startswith("*Bom dia, Dra.") and "🔖" in (m.get("content") or "")
+               and sem_assinatura(m.get("content")).startswith("*Bom dia, Dra.") and "🔖" in (m.get("content") or "")
                and m["createdAt"] < antes_de]
     if not resumos:
         return None, {}
@@ -164,7 +175,7 @@ def resumo_vigente(msgs, antes_de):
     partes = [m for m in resumos if ultimo - ler_iso(m["createdAt"]) < timedelta(minutes=30)]
     if datetime.now(timezone.utc) - ultimo > timedelta(days=4):
         return None, {}
-    texto = "\n".join(m["content"] for m in partes)
+    texto = "\n".join(sem_assinatura(m["content"]) for m in partes)
     return ultimo, itens_do_resumo(texto)
 
 
@@ -204,14 +215,15 @@ def rascunhos_vigentes(msgs, antes_de):
     """Rascunhos do resumo matinal e do retorno mensal mais recentes (até 4 dias) e os já enviados."""
     rascunhos, enviados = {}, set()
     for inicio, exige in (("*Bom dia, Dra.", "🔖"), (INICIO_RETORNO, "📲")):
-        envs = [m for m in msgs if m.get("sender") != "CONTACT" and (m.get("content") or "").startswith(inicio)
+        envs = [m for m in msgs if m.get("sender") != "CONTACT" and sem_assinatura(m.get("content")).startswith(inicio)
                 and exige in (m.get("content") or "") and m["createdAt"] < antes_de]
         if not envs:
             continue
         ultimo = ler_iso(envs[-1]["createdAt"])
         if ler_iso(antes_de) - ultimo > timedelta(days=4):
             continue
-        texto = "\n".join(m["content"] for m in envs if ultimo - ler_iso(m["createdAt"]) < timedelta(minutes=30))
+        texto = "\n".join(sem_assinatura(m["content"]) for m in envs
+                          if ultimo - ler_iso(m["createdAt"]) < timedelta(minutes=30))
         novos = rascunhos_cliente(texto)
         rascunhos.update(novos)
         for m in msgs:  # confirmações "✅ Cliente avisado: item 2" depois deste resumo/retorno
@@ -264,19 +276,32 @@ def itens_citados(resto):
 class Execucao:
     """Executa os comandos de uma advogada e junta as linhas de resposta."""
 
-    def __init__(self, ej_fn, adv, hoje, itens, zaia=None, rascunhos=None, enviados=None):
+    def __init__(self, ej_fn, adv, hoje, itens, zaia=None, rascunhos=None, enviados=None, resumo_em=None):
         self.ej_fn, self.adv, self.hoje, self.itens, self.linhas = ej_fn, adv, hoje, itens, []
         self.zaia, self.rascunhos, self.enviados = zaia, rascunhos or {}, enviados or set()
+        self.resumo_em, self.cmd = resumo_em, "LIDA"
 
     @property
     def ej(self):
         return self.ej_fn()
 
+    def exemplo(self, nums):
+        """Como responder certo, com os números que existem no resumo (mostrado quando algo dá errado)."""
+        n = (nums + ["1"])[0]
+        return {"LIDA": f"LIDA {' '.join(nums[:2]) or '1'}", "MANTER": f"MANTER {n}",
+                "PRAZO": f"PRAZO {n} {ddmm(self.hoje + timedelta(days=7))} contestar",
+                "TAREFA": f"TAREFA {n} {ddmm(self.hoje + timedelta(days=1))} o que fazer",
+                "CLIENTE": f"CLIENTE {n}"}.get(self.cmd, f"LIDA {n}")
+
     def item(self, num):
         num = num_item(num)
         it = self.itens.get(num)
         if not it:
-            self.linhas.append(f"❓ Não achei o item {num} no resumo mais recente.")
+            nums = list(self.itens)
+            quando = f" de {self.resumo_em.astimezone(BRT):%d/%m}" if self.resumo_em else ""
+            lista = f" Os itens dele são: {', '.join(nums)}." if nums else ""
+            self.linhas.append(f"❓ Não achei o item {num} no resumo{quando}.{lista} "
+                               f"Responda com o número como aparece no resumo, ex.: *{self.exemplo(nums)}*")
         return it
 
     def marcar_lida(self, num, it):
@@ -403,7 +428,11 @@ class Execucao:
     def enviar_cliente(self, num, texto_editado=None):
         r = self.rascunhos.get(num)
         if not r:
-            self.linhas.append(f"❓ O item {num} não tem rascunho para o cliente (sem celular no cadastro?).")
+            com = [k for k in self.rascunhos if k not in self.enviados]
+            dica = (f" Itens com rascunho: {', '.join(com)} (ex.: *CLIENTE {com[0]}*)." if com else
+                    " Para mandar uma mensagem sua, peça em texto normal: \"mande para o cliente do item "
+                    f"{num} que ...\"")
+            self.linhas.append(f"❓ O item {num} não tem rascunho para o cliente (sem celular no cadastro?).{dica}")
             return
         if num in self.enviados:
             self.linhas.append(f"⚠️ O item {num} já foi enviado a {r['nome']}. Para outra mensagem, peça ao assistente.")
@@ -481,18 +510,21 @@ def comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem, so_cliente=False
             linhas = [(l, c) for l, c in linhas if c[0].startswith("CLIENTE")]
         if not linhas:
             continue
-        _, itens = resumo_vigente(msgs, m["createdAt"])
+        resumo_em, itens = resumo_vigente(msgs, m["createdAt"])
         rascunhos, enviados = rascunhos_vigentes(msgs, m["createdAt"])
         _feitos.add(m["id"])
-        exe = Execucao(ej_fn, adv, hoje, itens, zaia, rascunhos, enviados)
+        exe = Execucao(ej_fn, adv, hoje, itens, zaia, rascunhos, enviados, resumo_em)
         for linha, (cmd, resto) in linhas:
+            exe.cmd = cmd.replace("_TEXTO", "")
             try:
                 if cmd == "CLIENTE":
                     exe.cliente(resto)
                 elif cmd == "CLIENTE_TEXTO":
                     exe.cliente_texto(linha)
                 elif cmd in ("LIDA", "MANTER", "PRAZO", "TAREFA") and not itens:
-                    exe.linhas.append(f"❓ Não achei resumo recente para \"{linha.strip()[:40]}\".")
+                    exe.linhas.append(f"❓ Não achei resumo recente para \"{linha.strip()[:40]}\". Esses comandos "
+                                      f"valem para o resumo das 7h30 dos últimos 4 dias. Para outro pedido, "
+                                      f"escreva normalmente (ex.: \"agende reunião com Maria dia 22/10 às 14h\").")
                 elif cmd == "LIDA":
                     exe.lida(resto)
                 elif cmd == "MANTER":
