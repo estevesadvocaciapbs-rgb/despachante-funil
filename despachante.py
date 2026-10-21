@@ -753,7 +753,7 @@ def avisar_nao_agendado(zaia, grupo, lead, av):
         return
     tempo = f"{av['dias']} dias de empresa" if av["dias"] is not None else "tempo de empresa não informado"
     faltas = ", ".join(av["faltas"]) or "nenhuma"
-    zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+    zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
         f"🔎 *LEAD NÃO AGENDADO — {lead['nome']} ({lead['tel']})*\n"
         f"Trabalhista · nota {av['nota']}/10 ({av['eixos']}) · {tempo}\n"
         f"Motivo: {av['motivo']}. Faltas objetivas no relato: {faltas}.\n"
@@ -825,7 +825,7 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
             ja = any("SEM HORÁRIO DISPONÍVEL" in m.get("content", "") and lead["tel"] in m.get("content", "")
                      for m in grupo.get("mensagens", []))
             if not ja and not DRY_RUN:
-                zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+                zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
                     f"⚠️ *SEM HORÁRIO DISPONÍVEL — {lead['nome']} ({lead['tel']})*\n"
                     f"{NOME_AREA.get(area, '')}. Não há horário livre nos próximos {DIAS_UTEIS_JANELA} "
                     "dias úteis. 👉 Equipe: abrir um horário e combinar com o lead.\n"
@@ -845,7 +845,7 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
             zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv["id"],
                         mensagem=oferta, dataHora=quando, assinatura="ia", ativarIaAoResponder=True)
             if area == "vd":
-                zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+                zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
                     f"🚨 *PRIORIDADE — VIOLÊNCIA DOMÉSTICA — {lead['nome']} ({lead['tel']})*\n"
                     f"Horários mais próximos da Dra. Fernanda oferecidos: {lista}.\n"
                     "👉 Equipe: acompanhar e, se houver risco imediato, contatar a cliente agora."))
@@ -953,7 +953,7 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
                         f"Olá, {primeiro_nome(nome)}! Sua reunião com {adv['nome'][0].lower()}{adv['nome'][1:]} "
                         f"está confirmada para {texto_slot(inicio)}, por videochamada. Este é o link de acesso: {link} "
                         "— é só clicar nele na hora marcada. Eu te mando lembrete no dia. Até lá!"))
-    zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+    zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
         f"📅 *REUNIÃO AGENDADA — {nome} ({tel})*\n"
         f"{adv['curto']} · {NOME_AREA.get(area, 'área a confirmar')} · {texto_slot(inicio)} · Online · "
         "já está na agenda do EasyJur\n"
@@ -1022,7 +1022,7 @@ def gravar_pelo_grupo(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, 
 
         def responder(t):
             if not DRY_RUN:
-                zaia.chamar("enviar_mensagem_grupo", grupoId=g, texto=t + marca)
+                zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=g, texto=t + marca)
 
         nome_pedido, dd, mm, hh, mi, resto = pedido
         alvo = sem_acento(nome_pedido).split()[0]
@@ -1136,7 +1136,7 @@ def avisar_presenca(zaia, conversas, leads, grupo17, agora, contagem):
         zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(
             f"✅ *{nome} confirmou presença* no atendimento de hoje às {hora}.\n"
             + (f"🔗 Link da videochamada: {link}" if link else "🔗 Link: veja o evento no Google Agenda do escritório")))
-        zaia.chamar("enviar_mensagem_grupo", grupoId="claude-grupo-17", texto=(
+        zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId="claude-grupo-17", texto=(
             f"✅ PRESENÇA CONFIRMADA — {nome} ({tel}) · {hora} · {adv['curto']} · link enviado no privado do advogado"))
         contagem["presencas"] = contagem.get("presencas", 0) + 1
         log("presença confirmada — link enviado ao advogado")
@@ -1183,7 +1183,7 @@ def sugerir_gravar(zaia, conv, lead, msgs, oferta, ofertados, grupo, contagem):
     p_txt = re.sub(r"\s+", " ", sem_assinatura(prop.get("content") or ""))[:160]
     a_txt = re.sub(r"\s+", " ", aceites[-1].get("content") or "")[:120]
     if not DRY_RUN:
-        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+        zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
             f"📌 *HORÁRIO COMBINADO FORA DA OFERTA — {nome} ({tel})*\n"
             f"Escritório: \"{p_txt}\"\nLead: \"{a_txt}\"\n"
             f"Ainda NÃO está no EasyJur. 👉 Para gravar e agendar os lembretes, um advogado responde aqui: "
@@ -1211,7 +1211,7 @@ def avisar_outro_horario(zaia, conv, lead, msgs, oferta, ofertados, txt_oferta, 
     frase = re.sub(r"\s+", " ", pedidos[-1].get("content") or "")[:200]
     oferecidos = "; ".join(texto_slot(data_do_texto(*s, datetime.now(BRT))) for s in sorted(ofertados))
     if not DRY_RUN:
-        zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+        zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
             f"🕐 *LEAD PEDIU OUTRO HORÁRIO — {nome} ({tel})*\n"
             f"Oferta de {adv['curto']}: {oferecidos}.\nResposta: \"{frase}\"\n"
             "👉 Equipe: combinar o horário com o lead. Quando o lead aceitar um horário fora da oferta, "
@@ -1298,7 +1298,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 continue  # avisa uma vez só
             _conflitos_avisados.add(tel)
             if not DRY_RUN:
-                zaia.chamar("enviar_mensagem_grupo", grupoId=GRUPO, texto=(
+                zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
                     f"⚠️ *CONFLITO DE AGENDA — {nome} ({tel})*\nEscolheu {texto_slot(inicio)} com "
                     f"{adv['curto']}, que foi ocupado depois da oferta. 👉 Equipe: oferecer outro horário."))
             contagem["conflitos"] += 1

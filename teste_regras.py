@@ -438,13 +438,15 @@ assert d.classificar(_t) == (None, "informativo")
 assert d.classificar("‼️NOVA OPORTUNIDADE‼️\nÁREA: Previdenciário — salário-maternidade")[0] == "previdenciario"
 print("OK — dúvida informativa não recebe oferta")
 
-# ---- a Za.Ia passou a exigir "assinatura" no enviar_mensagem (20/10/2026): nenhum envio sem ela
+# ---- a Za.Ia passou a exigir "assinatura" no enviar_mensagem (20/10/2026) e no enviar_mensagem_grupo
+# (21/10/2026, a rodada inteira falhava no aviso de reunião gravada): nenhum envio sem ela
 import re as _re, io as _io
-for _arq in ("despachante.py", "secretaria.py"):
+for _arq in ("despachante.py", "secretaria.py", "retorno.py", "porteiro.py"):
     _src = _io.open(_arq, encoding="utf-8").read()
-    _sem = [l for l in _src.splitlines() if '"enviar_mensagem"' in l and "assinatura=" not in l]
+    _sem = [l for l in _src.splitlines()
+            if _re.search(r'"enviar_mensagem(_grupo)?"', l) and "assinatura=" not in l]
     assert not _sem, (_arq, _sem)
-print("OK — todo enviar_mensagem leva assinatura")
+print("OK — todo enviar_mensagem e enviar_mensagem_grupo leva assinatura")
 
 # ---- lead escolhe o horário e a Annie não confirma (caso Júnior 21/10: conversa transferida ao advogado)
 from datetime import timezone as _tz2, timedelta as _td2
