@@ -445,3 +445,40 @@ for _arq in ("despachante.py", "secretaria.py"):
     _sem = [l for l in _src.splitlines() if '"enviar_mensagem"' in l and "assinatura=" not in l]
     assert not _sem, (_arq, _sem)
 print("OK — todo enviar_mensagem leva assinatura")
+
+# ---- lead escolhe o horário e a Annie não confirma (caso Júnior 21/10: conversa transferida ao advogado)
+from datetime import timezone as _tz2, timedelta as _td2
+_oferta_txt = ("*Annie*:\nOlá, Júnior! O Dr. Lucas analisou o seu caso e pode te atender por videochamada. "
+               "Tenho estes horários: 1) quinta-feira, 22/10, às 10h30; 2) quinta-feira, 22/10, às 14h00. "
+               "Qual fica melhor pra você?")
+_slots = list(dict.fromkeys(d.RE_SLOT.findall(_oferta_txt)))
+for _t, _esp in [("Amanhã às 10h30", ("22", "10", "10", "30")), ("14h", ("22", "10", "14", "00")),
+                 ("pode ser 10:30", ("22", "10", "10", "30")), ("O primeiro", ("22", "10", "10", "30")),
+                 ("2", ("22", "10", "14", "00")), ("de manhã", ("22", "10", "10", "30")),
+                 ("não posso às 10h30", None), ("10h30 ou 14h tanto faz", None), ("Isso mesmo", None),
+                 ("teria 16h?", None), ("Amanhã", None)]:
+    assert d.slot_escolhido(_t, _slots) == _esp, (_t, d.slot_escolhido(_t, _slots))
+
+def _m(sender, texto, quando):
+    return {"sender": sender, "content": texto, "createdAt": quando}
+_oferta = _m("USER", _oferta_txt, "2026-10-21T12:53:02.508Z")
+_msgs = [_oferta, _m("CONTACT", "Isso mesmo", "2026-10-21T12:53:37.000Z"),
+         _m("AGENT", "*Annie*:\nPerfeito, Júnior! Então me diga só qual horário fica melhor: quinta-feira, 22/10, "
+                     "às 10h30, ou às 14h00?", "2026-10-21T12:54:28.774Z"),
+         _m("CONTACT", "Amanhã às 10h30", "2026-10-21T12:54:54.000Z")]
+_t0 = datetime(2026, 10, 21, 12, 57, tzinfo=_tz2.utc)
+assert d.escolha_do_lead(_msgs, _oferta, _oferta_txt, _t0) is None             # ainda dentro dos 5 min
+_esc = d.escolha_do_lead(_msgs, _oferta, _oferta_txt, _t0 + _td2(minutes=5))
+assert _esc and _esc[1] == ("22", "10", "10", "30")
+# a Annie respondeu depois da escolha: o fluxo normal cuida
+assert d.escolha_do_lead(_msgs + [_m("AGENT", "*Annie*:\nok", "2026-10-21T12:55:10.000Z")], _oferta, _oferta_txt,
+                         _t0 + _td2(minutes=5)) is None
+# o lead voltou atrás
+assert d.escolha_do_lead(_msgs + [_m("CONTACT", "não, melhor à tarde", "2026-10-21T12:56:10.000Z")], _oferta,
+                         _oferta_txt, _t0 + _td2(minutes=9)) is None
+# já confirmado pelo despachante: não manda de novo
+_ini = d.data_do_texto("22", "10", "10", "30", _t0)
+_conf = _m("USER", f"*Annie*:\nPerfeito, Júnior! Seu atendimento {d.MARCA_CONFIRMACAO} {d.texto_slot(_ini)}, por "
+                   "videochamada com Dr. Lucas.", "2026-10-21T13:00:00.000Z")
+assert not d.ja_confirmado_ao_lead(_msgs, _msgs[-1], _ini) and d.ja_confirmado_ao_lead(_msgs + [_conf], _msgs[-1], _ini)
+print("OK — lead escolheu e a Annie não confirmou: o despachante confirma uma vez")

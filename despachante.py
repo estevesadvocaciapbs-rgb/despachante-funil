@@ -602,6 +602,67 @@ def pediu_outro_horario(texto, ofertados):
     return not citou_ofertada  # citar um horário da oferta é escolha, não pedido de outro
 
 
+# Caso Júnior (21/10): o último passo do roteiro transfere a conversa para o advogado (TRANSFER_HUMAN) e a
+# Annie para de responder. O lead escolheu "Amanhã às 10h30" e ninguém confirmou. Se o lead escolhe
+# claramente UM horário da oferta e a Annie não confirma em 5 minutos, o despachante confirma e grava.
+ESPERA_ESCOLHA = timedelta(minutes=5)
+RE_HORA_LEAD = re.compile(r"\b(\d{1,2})\s*(?:h|hs|hrs|horas|:)\s*(\d{2})?\b")
+RE_ORDINAL = re.compile(r"^(?:a |o |opcao |horario |numero )?(1|2|primeir[ao]|segund[ao])(?: opcao| horario| opção)?$")
+
+
+def slot_escolhido(texto, slots):
+    """slots: horários da oferta, na ordem (dd, mm, hh, mi). Devolve o ÚNICO que o texto escolhe, ou None."""
+    t = sem_acento(texto)
+    if re.search(r"\bnao\b", t):
+        return None  # "não posso às 10h30": não é escolha
+    citadas = {(int(h), mi or "00") for h, mi in RE_HORA_LEAD.findall(t)}
+    if citadas:  # "14h" casa com o 14h00 da oferta; hora fora da oferta ("teria 16h?") não casa com nada
+        cand = [s for s in slots if (int(s[2]), s[3]) in citadas]
+        datas = {(int(d), int(m)) for d, m in re.findall(r"\b(\d{1,2})/(\d{1,2})\b", t)}
+        if datas:
+            cand = [s for s in cand if (int(s[0]), int(s[1])) in datas]
+        return cand[0] if len(set(cand)) == 1 and len(citadas) == 1 else None
+    if pediu_outro_horario(texto, set(slots)):
+        return None
+    o = RE_ORDINAL.match(re.sub(r"[^\w ]", "", t).strip())
+    if o and len(slots) >= 2:
+        return slots[0] if o.group(1) in ("1", "primeira", "primeiro") else slots[1]
+    manha, tarde = bool(re.search(r"\bmanha\b", t)), bool(re.search(r"\btarde\b", t))  # "amanhã" não é manhã
+    turno = [s for s in slots if (manha and int(s[2]) < 12) or (tarde and int(s[2]) >= 12)]
+    return turno[0] if len(turno) == 1 and not (manha and tarde) else None
+
+
+def escolha_do_lead(msgs, oferta, txt_oferta, agora):
+    """(mensagem do lead, slot) quando o lead escolheu UM horário e a Annie não respondeu em 5 min; senão None."""
+    slots = list(dict.fromkeys(RE_SLOT.findall(txt_oferta)))
+    depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
+    for i in range(len(depois) - 1, -1, -1):
+        m = depois[i]
+        if m.get("sender") != "CONTACT":
+            continue
+        slot = slot_escolhido(m.get("content") or "", slots)
+        if not slot:
+            continue
+        resto = depois[i + 1:]
+        if any(x.get("sender") == "AGENT" and (x.get("content") or "").startswith("*Annie*") for x in resto):
+            return None  # a Annie respondeu depois da escolha: o fluxo normal cuida
+        if any(x.get("sender") == "CONTACT" and (re.search(r"\bnao\b", sem_acento(x.get("content")))
+                                                 or pediu_outro_horario(x.get("content") or "", set(slots)))
+               for x in resto):
+            return None  # o lead voltou atrás ou pediu outro horário
+        if agora - ler_iso(m["createdAt"]) < ESPERA_ESCOLHA or agora - ler_iso(m["createdAt"]) > timedelta(hours=24):
+            return None
+        return m, slot
+    return None
+
+
+def ja_confirmado_ao_lead(msgs, m_lead, inicio):
+    alvo = sem_acento(texto_slot(inicio))
+    return any(x.get("sender") != "CONTACT" and x["createdAt"] > m_lead["createdAt"]
+               and MARCA_CONFIRMACAO in sem_acento(x.get("content")) and alvo in sem_acento(x.get("content"))
+               for x in msgs)
+
+
 def data_do_texto(dd, mm, hh, mi, agora):
     ano = agora.year + (1 if int(mm) < agora.month - 6 else 0)
     return datetime(ano, int(mm), int(dd), int(hh), int(mi), tzinfo=BRT)
@@ -1182,10 +1243,26 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             if e_confirmacao(m.get("content") or "", ofertados):
                 batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
                 conf.append((m, batem[0]))
+        motivo = "A Annie confirmou"
         if not conf:
-            avisar_outro_horario(zaia, conv, lead, msgs, ofertas[-1], ofertados, txt, grupo, contagem)
-            sugerir_gravar(zaia, conv, lead, msgs, ofertas[-1], ofertados, grupo, contagem)
-            continue
+            escolha = escolha_do_lead(msgs, ofertas[-1], txt, agora)
+            if not escolha:
+                avisar_outro_horario(zaia, conv, lead, msgs, ofertas[-1], ofertados, txt, grupo, contagem)
+                sugerir_gravar(zaia, conv, lead, msgs, ofertas[-1], ofertados, grupo, contagem)
+                continue
+            m_lead, slot = escolha
+            inicio_esc = data_do_texto(*slot, agora)
+            adv_esc = advogado_do_texto(txt)
+            if inicio_esc > agora and not DRY_RUN and not ja_confirmado_ao_lead(msgs, m_lead, inicio_esc):
+                nome_lead = primeiro_nome(conv["contact"].get("name") or lead["nome"])
+                zaia.chamar("enviar_mensagem", assinatura="ia", numero=lead["tel"], texto=(
+                    f"Perfeito, {nome_lead}! Seu atendimento {MARCA_CONFIRMACAO} {texto_slot(inicio_esc)}, "
+                    f"por videochamada com {adv_esc['curto']}. Antes do horário você recebe aqui o link de acesso. "
+                    f"Qualquer imprevisto, é só avisar por aqui."))
+                contagem["confirmadas_pelo_despachante"] = contagem.get("confirmadas_pelo_despachante", 0) + 1
+                log("lead escolheu o horário e a Annie não confirmou: o despachante confirmou")
+            conf = [({"content": txt}, slot)]  # a gravação segue o fluxo normal (advogado vem da oferta)
+            motivo = "O lead escolheu o horário e a Annie não confirmou (conversa já transferida)"
         ultima = conf[-1][0]["content"]
         inicio = data_do_texto(*conf[-1][1], agora)
         if inicio < agora:
@@ -1233,7 +1310,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             continue
 
         if not gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendentes, agora,
-                              contagem, chave, "A Annie confirmou"):
+                              contagem, chave, motivo):
             continue
 
 
