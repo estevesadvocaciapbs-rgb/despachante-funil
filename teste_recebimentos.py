@@ -44,6 +44,9 @@ class FakeZ:
             self.enviadas.append(a["texto"])
             self.grupo.append({"sender": "AGENT", "content": "*Annie*:\n" + a["texto"]})
             return {}
+        if f == "buscar_contatos":
+            return {"contatos": [{"name": "Cynthia- Setor financeiro", "phone": None},
+                                 {"name": "Financeiro Escritório", "phone": "120363000000000001"}]}
         if f == "preparar_upload_midia":
             if not self.midia_ok:
                 raise RuntimeError("grupo não aceita mídia")
@@ -69,6 +72,7 @@ ej = FakeEJ(RECEITAS)
 itens = r.linhas(ej, r.receitas_do_mes(ej, 2026, 11))
 assert [x["id"] for x in itens] == [11, 12, 10]
 assert itens[0]["cliente"] == "Maria Da Silva" and itens[0]["parcela"] == "4/6" and itens[1]["parcela"] == "única"
+assert itens[0]["espec"] == "Honorários — Êxito"
 assert itens[2]["espec"] == "Operacional — Contencioso (Geral)" and itens[2]["forma"] == "Boleto"
 assert itens[1]["situacao"] == "Vencida"
 assert ej.chamadas.count("get_pessoa") == 2  # um por cliente
@@ -88,9 +92,12 @@ assert r.primeiro_dia_util(ej, 2026, 11) == date(2026, 11, 3)
 z = FakeZ()
 assert r.rodada(z, ej, datetime(2026, 11, 2, 12, tzinfo=timezone.utc)) is False and not z.enviadas
 assert r.rodada(z, ej, datetime(2026, 11, 3, 11, 30, tzinfo=timezone.utc)) is True
-assert len(z.midias) == 1 and z.midias[0]["numero"] == "claude-grupo-18" and z.midias[0]["assinatura"] == "ia"
+assert len(z.midias) == 1 and z.midias[0]["numero"] == "120363000000000001" and z.midias[0]["assinatura"] == "ia"
 assert z.enviadas[0].startswith("📊 *Parcelas a receber — novembro/2026*") and "R$ 1.185,08" in z.enviadas[0]
 assert len(z.enviadas) == 1  # com a planilha, só o resumo
+assert "• 23/11 a 29/11: R$ 135,08 (1)" in z.enviadas[0]
+r.enviar(FakeZ(), FakeEJ([rec(20, "2026-11-30", 10, 1)]), 2026, 11, dry_run=True)
+assert "• 30/11: R$ 10,00 (1)" in r.resumo(r.linhas(FakeEJ([rec(20, "2026-11-30", 10, 1)]), [rec(20, "2026-11-30", 10, 1)]), 2026, 11)
 assert r.rodada(z, ej, datetime(2026, 11, 4, 11, 30, tzinfo=timezone.utc)) is False  # não repete
 print("OK — envia no 1º dia útil, uma vez só")
 

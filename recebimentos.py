@@ -29,6 +29,9 @@ import secretaria
 
 BRT = timezone(timedelta(hours=-3))
 GRUPO_FINANCEIRO = "claude-grupo-18"
+# O enviar_midia da Za.Ia só aceita número (tira tudo que não é dígito): para o grupo é preciso o ID de
+# WhatsApp dele (18 dígitos, começa com 1203), que a Za.Ia guarda no contato com o nome do grupo.
+CONTATO_GRUPO = "Financeiro Escritório"
 TITULO = "📊 *Parcelas a receber"
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
          "setembro", "outubro", "novembro", "dezembro"]
@@ -86,7 +89,7 @@ def nome_pessoa(ej, pid, cache):
 
 
 def especificacao(r):
-    desc = (r.get("descricao") or "").strip().capitalize()
+    desc = re.sub(r"^Honorarios\b", "Honorários", (r.get("descricao") or "").strip().capitalize())
     plano = ((r.get("tipo_receita") or {}).get("descricao") or "").strip()
     plano = re.sub(r"^[\d.]+\s*-?\s*", "", plano)  # "1.1.01 - Êxito" -> "Êxito"
     return " — ".join(p for p in (desc, plano) if p) or "—"
@@ -211,10 +214,15 @@ def resumo(itens, ano, mes, previa=False, com_planilha=True):
         semanas.setdefault(ini, []).append(x["valor"])
     blocos = [cabecalho(ano, mes, previa),
               f"{len(itens)} parcela(s) em aberto · total *{brl(total)}*"]
+    ultimo = (date(ano, mes, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+    def periodo(s):
+        ini, fim = max(s, date(ano, mes, 1)), min(s + timedelta(days=6), ultimo)
+        return f"{ini:%d/%m}" if ini == fim else f"{ini:%d/%m} a {fim:%d/%m}"
+
     if semanas:
         blocos.append("Por semana:\n" + "\n".join(
-            f"• {max(s, date(ano, mes, 1)):%d/%m} a {min(s + timedelta(days=6), (date(ano, mes, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)):%d/%m}: "
-            f"{brl(sum(v))} ({len(v)})" for s, v in sorted(semanas.items())))
+            f"• {periodo(s)}: {brl(sum(v))} ({len(v)})" for s, v in sorted(semanas.items())))
     if com_planilha:
         blocos.append("_Planilha completa acima (vencimento, cliente, valor, parcela e especificação). "
                       "Pagamento recebido: é só avisar aqui que eu dou a baixa (ex.: dar baixa na parcela 3/12 do João, pagou 300 hoje por Pix)._")
@@ -243,12 +251,21 @@ def ja_enviado(zaia, ano, mes):
                and not secretaria.sem_assinatura(m.get("content")).startswith(alvo + " (prévia)") for m in msgs)
 
 
+def id_whatsapp_do_grupo(zaia):
+    for c in (zaia.chamar("buscar_contatos", query=CONTATO_GRUPO) or {}).get("contatos", []):
+        dig = re.sub(r"\D", "", c.get("phone") or "")
+        if secretaria.norm(c.get("name")) == secretaria.norm(CONTATO_GRUPO) and len(dig) >= 18 and dig.startswith("1203"):
+            return dig
+    raise RuntimeError("contato do grupo não encontrado na Za.Ia")
+
+
 def enviar_planilha(zaia, conteudo, nome, legenda):
+    destino = id_whatsapp_do_grupo(zaia)
     prep = zaia.chamar("preparar_upload_midia", nomeArquivo=nome, mimetype=XLSX, tamanhoBytes=len(conteudo)) or {}
     req = urllib.request.Request(prep["uploadUrl"], data=conteudo, method="PUT", headers={"Content-Type": XLSX})
     with urllib.request.urlopen(req, timeout=60) as r:
         r.read()
-    zaia.chamar("enviar_midia", assinatura="ia", numero=GRUPO_FINANCEIRO, uploadKey=prep["uploadKey"],
+    zaia.chamar("enviar_midia", assinatura="ia", numero=destino, uploadKey=prep["uploadKey"],
                 nomeArquivo=nome, mimetype=XLSX, legenda=legenda)
 
 
