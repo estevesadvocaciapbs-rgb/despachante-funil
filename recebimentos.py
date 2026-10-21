@@ -7,7 +7,7 @@ recusar o arquivo, a mesma lista vai em texto no grupo.
 
 Roda pelo workflow "Parcelas do mês" (.github/workflows/recebimentos.yml), em dias 1 a 7 de cada mês;
 o código decide se já é o 1º dia útil e se a planilha do mês já foi enviada (procura o resumo no grupo),
-então rodar de novo não duplica. Manual: python recebimentos.py --mes 2026-11 [--previa] [--dry-run].
+então rodar de novo não duplica. Manual: python recebimentos.py 2026-11 [--previa] [--so-planilha] [--dry-run].
 
 Gasto no EasyJur: 1 listagem por página de 100 receitas (2 status) + 1 get_pessoa por cliente
 (~30 chamadas por mês) + até 7 consultas de feriado.
@@ -262,14 +262,16 @@ def id_whatsapp_do_grupo(zaia):
 def enviar_planilha(zaia, conteudo, nome, legenda):
     destino = id_whatsapp_do_grupo(zaia)
     prep = zaia.chamar("preparar_upload_midia", nomeArquivo=nome, mimetype=XLSX, tamanhoBytes=len(conteudo)) or {}
-    req = urllib.request.Request(prep["uploadUrl"], data=conteudo, method="PUT", headers={"Content-Type": XLSX})
+    # Sem User-Agent próprio, o Cloudflare da Za.Ia recusa o PUT do Python (HTTP 403, "error code: 1010").
+    req = urllib.request.Request(prep["uploadUrl"], data=conteudo, method="PUT", headers={
+        "Content-Type": XLSX, "User-Agent": "despachante-funil/2.0 (+https://github.com/estevesadvocaciapbs-rgb/despachante-funil)"})
     with urllib.request.urlopen(req, timeout=60) as r:
         r.read()
     zaia.chamar("enviar_midia", assinatura="ia", numero=destino, uploadKey=prep["uploadKey"],
                 nomeArquivo=nome, mimetype=XLSX, legenda=legenda)
 
 
-def enviar(zaia, ej, ano, mes, previa=False, dry_run=False):
+def enviar(zaia, ej, ano, mes, previa=False, dry_run=False, so_planilha=False):
     itens = linhas(ej, receitas_do_mes(ej, ano, mes))
     nome = f"parcelas-a-receber-{ano}-{mes:02d}.xlsx"
     conteudo = planilha(itens, f"{MESES[mes - 1].capitalize()} {ano}")
@@ -282,7 +284,10 @@ def enviar(zaia, ej, ano, mes, previa=False, dry_run=False):
             enviar_planilha(zaia, conteudo, nome, cabecalho(ano, mes, previa).replace("*", ""))
             com_planilha = True
         except Exception as e:  # a lista em texto garante a entrega
-            _log(f"planilha não enviada ao grupo ({type(e).__name__}); vai a lista em texto")
+            motivo = despachante.RE_TELEFONE_LOG.sub("[tel]", f"{type(e).__name__}: {e}")[:160]
+            _log(f"planilha não enviada ao grupo ({motivo}); vai a lista em texto")
+    if so_planilha:  # reenvio só do arquivo: o resumo e a lista já estão no grupo, nada mais sai
+        return itens, conteudo
     zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO_FINANCEIRO,
                 texto=resumo(itens, ano, mes, previa, com_planilha))
     if itens and not com_planilha:
@@ -311,7 +316,8 @@ def main(argv):
     ej = despachante.MCP(despachante.EASYJUR_URL, os.environ.get("EASYJUR_TOKEN"), "EasyJur")
     m = next((re.fullmatch(r"(\d{4})-(\d{2})", a) for a in argv if re.fullmatch(r"\d{4}-\d{2}", a)), None)
     if m:  # envio manual de um mês escolhido (com --previa, não conta como o envio oficial)
-        enviar(zaia, ej, int(m.group(1)), int(m.group(2)), previa="--previa" in argv, dry_run=dry)
+        enviar(zaia, ej, int(m.group(1)), int(m.group(2)), previa="--previa" in argv, dry_run=dry,
+               so_planilha="--so-planilha" in argv)
     elif not dry:
         rodada(zaia, ej)
     _log(f"chamadas ao EasyJur: {despachante.ESTADO_EJ['chamadas']}")

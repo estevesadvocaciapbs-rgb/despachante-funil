@@ -114,3 +114,14 @@ r.enviar(z, FakeEJ(RECEITAS), 2026, 11)
 assert len(z.enviadas) == 2 and "Planilha completa" not in z.enviadas[0]
 assert z.enviadas[1].startswith("05/11 · *Maria Da Silva* · R$ 750,00 · parcela 4/6")
 print("OK — sem planilha, a lista sai em texto")
+
+# Só a planilha: nenhum texto no grupo, nem quando o arquivo falha
+for ok in (True, False):
+    z = FakeZ(midia_ok=ok)
+    r.enviar(z, FakeEJ(RECEITAS), 2026, 11, previa=True, so_planilha=True)
+    assert not z.enviadas and len(z.midias) == (1 if ok else 0)
+heads = []
+r.urllib.request.urlopen = lambda req, timeout=0: heads.append(req.get_header("User-agent")) or io.BytesIO(b"")
+r.enviar(FakeZ(), FakeEJ(RECEITAS), 2026, 11, so_planilha=True)
+assert heads and heads[0].startswith("despachante-funil/")  # sem isso o Cloudflare da Za.Ia recusa o upload
+print("OK — reenvio só da planilha, com identidade própria no upload")

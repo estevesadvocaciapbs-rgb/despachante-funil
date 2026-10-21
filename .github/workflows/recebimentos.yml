@@ -6,7 +6,7 @@ on:
     # e uma vez por mês (procura o resumo no grupo Financeiro Escritório), então repetir não duplica.
     - cron: "0 11 1-7 * *"
     - cron: "0 14 1-7 * *"
-  push:  # TEMPORÁRIO (21/10): prévia de novembro para testar o envio; 2ª prévia, agora com a planilha; removido no commit seguinte
+  push:  # TEMPORÁRIO (21/10): prévia de novembro para testar o envio; só a planilha da prévia; removido no commit seguinte
     paths: [".github/workflows/recebimentos.yml"]
   workflow_dispatch:
     inputs:
@@ -43,4 +43,4 @@ jobs:
           PREVIA: ${{ inputs.previa && '--previa' || '' }}
           PYTHONUNBUFFERED: "1"
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then python recebimentos.py 2026-11 --previa; else python recebimentos.py $MES $PREVIA; fi
+          if [ "${{ github.event_name }}" = "push" ]; then python recebimentos.py 2026-11 --previa --so-planilha; else python recebimentos.py $MES $PREVIA; fi
