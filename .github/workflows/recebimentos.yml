@@ -1,0 +1,43 @@
+name: Parcelas do mês
+
+on:
+  schedule:
+    # Dias 1 a 7, às 8h e às 11h de Belém (11h e 14h UTC). O código só envia a partir do 1º dia útil
+    # e uma vez por mês (procura o resumo no grupo Financeiro Escritório), então repetir não duplica.
+    - cron: "0 11 1-7 * *"
+    - cron: "0 14 1-7 * *"
+  workflow_dispatch:
+    inputs:
+      mes:
+        description: "Mês no formato AAAA-MM (vazio = envio automático do mês atual)"
+        type: string
+        default: ""
+      previa:
+        description: "Marcar como prévia (não conta como o envio oficial do mês)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: recebimentos
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Enviar planilha de parcelas ao grupo Financeiro Escritório
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
+          MES: ${{ inputs.mes }}
+          PREVIA: ${{ inputs.previa && '--previa' || '' }}
+          PYTHONUNBUFFERED: "1"
+        run: python recebimentos.py $MES $PREVIA

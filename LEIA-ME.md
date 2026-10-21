@@ -121,6 +121,20 @@ com IA. Cada comando é executado uma vez: a resposta leva a marca `#número` da
 mensagem do comando. Áudio não é tratado aqui. Só baixa a conversa inteira
 quando chegou mensagem nova (confere antes a hora da última mensagem).
 
+## Parcelas do mês (`recebimentos.py`, desde 21/10/2026)
+
+No 1º dia útil de cada mês (8h de Belém; nova tentativa às 11h), o workflow
+"Parcelas do mês" lê no EasyJur as receitas em aberto ou vencidas com
+vencimento no mês e manda ao grupo "Financeiro Escritório" uma planilha .xlsx
+(vencimento, cliente, valor, parcela x/y, especificação, forma de pagamento,
+situação e nº da receita, com total) e um resumo com o total por semana. Se a
+Za.Ia recusar o arquivo no grupo, a mesma lista vai em texto. Não repete no mês
+(procura o resumo "📊 Parcelas a receber — mês/ano" no grupo). Para mandar de
+novo ou ver outro mês: Actions → "Parcelas do mês" → Run workflow, mês
+`AAAA-MM` (com "prévia" marcado, não conta como o envio oficial). Custo: ~30
+chamadas ao EasyJur por mês. A planilha é montada em memória; nada fica no
+repositório nem no log.
+
 ## Porteiro (`porteiro.py`)
 
 Também no plantão, a cada 2 minutos. Olha o privado dos 3 advogados e os grupos
