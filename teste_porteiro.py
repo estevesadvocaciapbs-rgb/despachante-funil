@@ -176,7 +176,7 @@ manha = _dt(2026, 10, 22, 11, 5, tzinfo=timezone.utc)  # 08:05 em Belém
 itens = dict(p.pendencias_financeiro(GRUPO18, manha))
 assert set(itens) == {"F4 de 21/10", "F5 de 21/10", "F6 de 21/10"}, itens
 assert "esperando dado (falta forma de pagamento)" in itens["F4 de 21/10"] and "CODELAW Laura" in itens["F4 de 21/10"]
-assert "entra no lançamento de hoje às 22h" in itens["F5 de 21/10"]  # aprovada depois das 22h de ontem
+assert "entra no próximo lançamento automático" in itens["F5 de 21/10"]  # aprovada depois das 22h de ontem
 assert "Dr. Lucas Seoane" in itens["F6 de 21/10"]  # favorecido no meio da linha dos "Dados finais"
 # no dia seguinte, sem 🧾, vira alerta de atraso
 amanha = dict(p.pendencias_financeiro(GRUPO18, _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc)))

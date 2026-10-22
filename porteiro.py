@@ -239,9 +239,9 @@ def pendencias_financeiro(msgs, agora):
             continue
         quem = _quem(m.get("content") or "")
         if ler_iso(m["createdAt"]) < ultimas_22h:
-            estado = "⚠️ aprovada e *ainda não lançada* no EasyJur (já devia ter entrado no lançamento das 22h)"
+            estado = "⚠️ aprovada e *ainda não lançada* no EasyJur (já devia ter entrado no lançamento da noite)"
         else:
-            estado = "aprovada, *ainda não lançada*: entra no lançamento de hoje às 22h"
+            estado = "aprovada, *ainda não lançada*: entra no próximo lançamento automático (8h30)"
         itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}"))
     ultimo = {}
     for i, m in enumerate(msgs):  # o rascunho mais recente de cada F (o "✏️ atualizado" substitui o anterior)
@@ -285,7 +285,8 @@ def avisar_pendencias(zaia, msgs, agora):
     if not itens:
         return
     texto = (cab + "\n" + "\n".join(linha for _, linha in itens)
-             + "\n_Despesa aprovada é lançada no EasyJur às 22h e confirmada aqui com 🧾. "
+             + "\n_Despesa aprovada é lançada no EasyJur no lançamento automático (8h30, 11h30, 15h30 e 22h30) "
+             "e confirmada aqui com 🧾. "
              "Se algo da lista já foi resolvido, responda o código (ex.: NÃO F4) ou ignore._")
     try:
         zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO_FINANCEIRO, texto=texto)
