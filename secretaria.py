@@ -28,12 +28,12 @@ LUCAS_CONTROLADORIA = 344268
 
 ADVOGADAS_RESUMO = [
     {"chave": "fernanda", "nome": "Dra. Fernanda", "tel": "5594991742534", "id": 378457,
-     "assinatura": "*Dra. Fernanda Mesquita:*"},
+     "assinatura": "*Dra. Fernanda Mesquita*:"},
     {"chave": "danielle", "nome": "Dra. Danielle", "tel": "5594992048054", "id": 344269,
-     "assinatura": "*Dra. Danielle Esteves:*"},
+     "assinatura": "*Dra. Danielle Esteves*:"},
 ]
 DR_LUCAS = {"chave": "lucas", "nome": "Dr. Lucas", "tel": "5524992432455", "id": 344268,
-            "assinatura": "*Dr. Lucas:*", "etiqueta": "PENDÊNCIA LUCAS"}
+            "assinatura": "*Dr. Lucas*:", "etiqueta": "PENDÊNCIA LUCAS"}
 AGENDA_POR_NOME = {"danielle": 344269, "dani": 344269, "fernanda": 378457,
                    "lucas": 344268, "diva": 372515}
 
@@ -186,7 +186,7 @@ def resumo_vigente(msgs, antes_de):
 RE_ITEM_CLI = re.compile(r"^\s*\*?([AMT]?\d{1,3})\.\s")
 RE_PARA_CLI = re.compile(r"📲[^\n]*?\*([^*\n]+)\*[^\n]*?📞\s*\+?(\d{12,13})")
 RE_TEXTO_CLI = re.compile(r"^\s*[\"“](.+?)[\"”]\s*$")
-RE_CLI_ENVIADO = re.compile(r"✅ Cliente avisado: item ([AMT]?\d{1,3})\b")
+RE_CLI_ENVIADO = re.compile(r"(?:✅|⏳) Cliente avisado: item ([AMT]?\d{1,3})\b")
 INICIO_RETORNO = "🗓️ *Retorno mensal"
 RE_LISTA_CLI = re.compile(r"\b([amt]?\d{1,3})\b", re.I)
 
@@ -271,6 +271,20 @@ def num_item(x):
 def itens_citados(resto):
     resto = re.sub(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", " ", resto)
     return [num_item(x) for x in RE_LISTA_ITENS.findall(resto)]
+
+
+def enviar_ao_cliente(zaia, tel, assinatura, texto):
+    """Mensagem ao cliente em nome do advogado. Vai com assinatura "usuario": sai só "*Dr. Lucas*:" + texto, como o
+    advogado digitando no painel (com "ia" saía "*Annie*:" em cima da assinatura do advogado — reclamação de 22/10).
+    Devolve False quando a Za.Ia demora a responder (timeout): ela costuma entregar mesmo assim (caso Júnior, 22/10:
+    o reenvio fez a mensagem chegar 3 vezes), então quem chama NUNCA reenvia, só avisa que está em confirmação."""
+    try:
+        zaia.chamar("enviar_mensagem", assinatura="usuario", numero=tel, texto=f"{assinatura}\n{texto}")
+        return True
+    except RuntimeError as erro:
+        if "sem conexão" in str(erro) or "timed out" in str(erro).lower():
+            return False
+        raise
 
 
 class Execucao:
@@ -441,9 +455,11 @@ class Execucao:
         if not texto or "⟨" in texto:
             self.linhas.append(f"❓ O rascunho do item {num} está incompleto. Responda CLIENTE {num}: seu texto")
             return
-        self.zaia.chamar("enviar_mensagem", assinatura="ia", numero=r["tel"], texto=f"{self.adv['assinatura']}\n{texto}")
+        ok = enviar_ao_cliente(self.zaia, r["tel"], self.adv["assinatura"], texto)
         self.enviados.add(num)
-        self.linhas.append(f"✅ Cliente avisado: item {num} — {r['nome']}")
+        self.linhas.append(f"✅ Cliente avisado: item {num} — {r['nome']}" if ok else
+                           f"⏳ Cliente avisado: item {num} — {r['nome']} (a Za.Ia demorou a confirmar; a mensagem costuma "
+                           f"chegar mesmo assim — confira na conversa antes de pedir de novo)")
 
     def cliente(self, resto):
         r = norm(resto)
@@ -653,12 +669,14 @@ def aprovacoes_lucas(zaia, msgs, agora, contagem, enviar=True):
                 linhas.append(f"❓ O texto do item {num} ainda tem ⟨ ⟩. Corrija com EDITAR {num}: texto")
                 continue
             if enviar:
-                zaia.chamar("enviar_mensagem", assinatura="ia", numero=it["tel"], texto=f"{DR_LUCAS['assinatura']}\n{texto}")
+                ok = enviar_ao_cliente(zaia, it["tel"], DR_LUCAS["assinatura"], texto)
                 try:
                     tirar_etiqueta(zaia, it["tel"], DR_LUCAS["etiqueta"])
                 except Exception as erro:  # etiqueta não pode impedir a confirmação
                     _log(f"etiqueta não retirada: {type(erro).__name__}")
-            linhas.append(f"✅ Enviado para {it['nome']} (item {num})")
+            linhas.append(f"✅ Enviado para {it['nome']} (item {num})" if not enviar or ok else
+                          f"⏳ Enviado para {it['nome']} (item {num}) — a Za.Ia demorou a confirmar; confira na conversa "
+                          f"antes de pedir de novo")
             contagem["respostas_lucas"] = contagem.get("respostas_lucas", 0) + 1
         if linhas:
             zaia.chamar("enviar_mensagem", assinatura="ia", numero=DR_LUCAS["tel"], texto="\n".join(linhas) + f"\n_{marca(m)}_")

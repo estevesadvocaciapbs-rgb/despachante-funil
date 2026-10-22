@@ -162,12 +162,12 @@ def rodar_lucas(texto):
 
 
 z = rodar_lucas("OK 1 2\nNão 3")
-assert z.enviadas[0] == ("5594900000001", "*Dr. Lucas:*\nOlá, Maria! Recebi seus documentos.")
+assert z.enviadas[0] == ("5594900000001", "*Dr. Lucas*:\nOlá, Maria! Recebi seus documentos.")
 conf = z.enviadas[-1]
 assert conf[0] == s.DR_LUCAS["tel"] and "✅ Enviado para MARIA TESTE (item 1)" in conf[1]
 assert "❓ Item 2" in conf[1] and "⏭️ Item 3" in conf[1] and len(z.enviadas) == 2 and z.removidas == ["e13"]
 z = rodar_lucas("EDITAR 2: Olá, José! O processo está concluso para sentença.\nAssim que sair, aviso.")
-assert z.enviadas[0] == ("5594900000002", "*Dr. Lucas:*\nOlá, José! O processo está concluso para sentença.\nAssim que sair, aviso.")
+assert z.enviadas[0] == ("5594900000002", "*Dr. Lucas*:\nOlá, José! O processo está concluso para sentença.\nAssim que sair, aviso.")
 z = rodar_lucas("ok todas")
 assert [e[0] for e in z.enviadas[:-1]] == ["5594900000001", "5594900000003"]
 z = rodar_lucas("Não lembrava disso")
@@ -199,7 +199,7 @@ assert s.classificar_linha("cliente ligou hoje") is None
 s._feitos.clear()
 z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
                       msg(30, "CONTACT", "CLIENTE 1 A1\nLIDA 2", "2026-10-19T13:00:00.000Z")])
-assert z.enviadas[0] == ("5594900000011", "*Dra. Fernanda Mesquita:*\nOlá, Fulano! Saiu uma intimação no seu "
+assert z.enviadas[0] == ("5594900000011", "*Dra. Fernanda Mesquita*:\nOlá, Fulano! Saiu uma intimação no seu "
                                           "processo e já estamos cuidando.")
 conf = z.enviadas[-1][1]
 assert "✅ Cliente avisado: item 1 — Fulano" in conf and "❓ O rascunho do item A1 está incompleto" in conf
@@ -214,7 +214,7 @@ assert len(z.enviadas) == 1 and "já foi enviado" in z.enviadas[0][1]
 s._feitos.clear()
 z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
                       msg(33, "CONTACT", "CLIENTE A1: Olá, Ciclano!\nO juiz marcou audiência.", "2026-10-19T13:00:00.000Z")])
-assert z.enviadas[0] == ("5594900000012", "*Dra. Fernanda Mesquita:*\nOlá, Ciclano!\nO juiz marcou audiência.")
+assert z.enviadas[0] == ("5594900000012", "*Dra. Fernanda Mesquita*:\nOlá, Ciclano!\nO juiz marcou audiência.")
 # item sem rascunho
 s._feitos.clear()
 z, ej = rodar_resumo([msg(1, "AGENT", RESUMO_CLI, "2026-10-19T10:36:00.000Z"),
@@ -239,7 +239,7 @@ z = FakeZ()
 conv = [msg(40, "AGENT", partes[0], "2026-10-19T12:00:00.000Z"),
         msg(41, "CONTACT", "CLIENTE T TODOS\nAGENDAR 22/10 14h teste", "2026-10-19T13:00:00.000Z")]
 s.comandos_do_resumo(z, lambda: FakeEJ(), s.DR_LUCAS, conv, AGORA, {}, so_cliente=True)
-assert z.enviadas[0][0] == "5594900000021" and z.enviadas[0][1].startswith("*Dr. Lucas:*\nOlá, Maria!")
+assert z.enviadas[0][0] == "5594900000021" and z.enviadas[0][1].startswith("*Dr. Lucas*:\nOlá, Maria!")
 assert "📅" not in z.enviadas[-1][1]  # o AGENDAR do Dr. Lucas fica para o Secretário com IA
 # fatia: cada cliente cai em exatamente um dia a cada 20 dias úteis
 from datetime import timedelta as _td
@@ -333,3 +333,26 @@ class ZA(FakeZ):
 assert rt.ja_enviado_hoje(ZA(), rt.ADVOGADOS[378457], date(2026, 10, 20))
 assert rt.teve_contato(ZA(), "5594900000099", HOJE_R)
 print("OK — retorno mensal reconhece mensagens com assinatura")
+
+# ---- mensagem ao cliente em nome do advogado: sem "Annie" e sem reenvio no timeout (casos de 22/10)
+class ZAssinatura:
+    def __init__(self, timeout=False):
+        self.timeout, self.envios = timeout, []
+
+    def chamar(self, f, **a):
+        if f == "enviar_mensagem":
+            self.envios.append(a)
+            if self.timeout:
+                raise RuntimeError("Za.Ia: sem conexão — The read operation timed out")
+        return {}
+
+
+z = ZAssinatura()
+assert s.enviar_ao_cliente(z, "5594900000099", s.DR_LUCAS["assinatura"], "Olá!") is True
+assert z.envios[0]["assinatura"] == "usuario" and z.envios[0]["texto"] == "*Dr. Lucas*:\nOlá!"
+z = ZAssinatura(timeout=True)
+assert s.enviar_ao_cliente(z, "5594900000099", s.DR_LUCAS["assinatura"], "Olá!") is False
+assert len(z.envios) == 1  # um envio só: nada de reenviar quando a Za.Ia demora
+fonte = open("secretaria.py", encoding="utf-8").read()
+assert 'assinatura="ia", numero=r["tel"]' not in fonte and 'assinatura="ia", numero=it["tel"]' not in fonte
+print("OK — mensagem ao cliente sai só com a assinatura do advogado e não é reenviada no timeout")
