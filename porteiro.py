@@ -38,6 +38,15 @@ JANELA_DESPESAS = timedelta(days=7)
 RE_DESP_APROVADA = re.compile(r"✅\s*\*?F(\d+)\*?\s+(?:despesa|repasse)\b[^\n]{0,40}?aprovad", re.I)
 # "🧾 F7 de 19/10 lançada no EasyJur" (lançamento noturno pelo Chrome)
 RE_DESP_LANCADA = re.compile(r"🧾\s*\*?F(\d+)\*?\s+de\s+(\d{2})/(\d{2})", re.I)
+# "💸 *DESPESA F4*", "💰 *LANÇAMENTO F2*", "💰 *BAIXA F7*", "💸 *REPASSE/DESPESA F8*" (rascunhos da rotina financeira)
+RE_RASCUNHO = re.compile(r"(?:💸|💰)\s*\*(?:DESPESA|LANÇAMENTO|LANCAMENTO|BAIXA|REPASSE/DESPESA)\s+F(\d+)\*", re.I)
+RE_FAVORECIDO = re.compile(r"\b(?:Favorecido|Cliente):\s*([^\n(·]+)")
+RE_FALTA = re.compile(r"⚠️\s*falta\s+([^:(\n]+)")
+# Aviso da manhã no grupo do financeiro (dias úteis, a partir das 8h): aprovado e não lançado, rascunho parado.
+AVISO_PENDENCIAS = "⏰ *Pendências do financeiro"
+HORA_AVISO, HORA_AVISO_FIM = 8, 12
+ESPERA_RASCUNHO = timedelta(hours=2)    # rascunho mais novo que isto ainda está na conversa
+RE_ASSINATURA = re.compile(r"^\s*\*[^*\n]{1,40}\*\s*:[ \t]*\n?")
 # As rotinas leem: https://raw.githubusercontent.com/estevesadvocaciapbs-rgb/despachante-funil/sinal/sinal.json
 
 # Em grupo, só vale como pedido o que fala com o sistema (mesma regra do Secretário geral).
@@ -53,7 +62,8 @@ RE_PEDIDO_GRUPO = re.compile(
     r"de baixa|dar baixa|da baixa|por favor)\b")
 
 _estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False,
-           "fin_chamado_em": None, "fin_pendente": False, "despesas_em": None, "despesas": None}
+           "fin_chamado_em": None, "fin_pendente": False, "despesas_em": None, "despesas": None,
+           "aviso_fin": None}
 
 
 def _log(msg):
@@ -200,6 +210,91 @@ def despesas_pendentes(msgs, agora):
     return sorted(k for k in aprovadas if k not in lancadas)
 
 
+def _sem_assinatura(texto):
+    return RE_ASSINATURA.sub("", texto or "", count=1)
+
+
+def _quem(texto):
+    m = RE_FAVORECIDO.search(texto)
+    return m.group(1).strip(" *") if m else ""
+
+
+def pendencias_financeiro(msgs, agora):
+    """[(chave, linha)] do que está parado no financeiro: despesa aprovada que nenhum lançamento das 22h
+    confirmou (sem "🧾") e rascunho F sem resposta de advogado nem decisão (✅/⏭️/🧾) há mais de 2 h."""
+    msgs = sorted((m for m in msgs if agora - ler_iso(m["createdAt"]) <= JANELA_DESPESAS),
+                  key=lambda m: m["createdAt"])
+    itens = []
+    aprov = {}
+    for m in msgs:
+        for n in RE_DESP_APROVADA.findall(m.get("content") or ""):
+            aprov[f"F{int(n)} de {ler_iso(m['createdAt']).astimezone(BRT):%d/%m}"] = m
+    local = agora.astimezone(BRT)
+    ultimas_22h = local.replace(hour=22, minute=0, second=0, microsecond=0)
+    if ultimas_22h > local:
+        ultimas_22h -= timedelta(days=1)
+    for chave in despesas_pendentes(msgs, agora):
+        m = aprov.get(chave)
+        if not m:
+            continue
+        quem = _quem(m.get("content") or "")
+        if ler_iso(m["createdAt"]) < ultimas_22h:
+            estado = "⚠️ aprovada e *ainda não lançada* no EasyJur (já devia ter entrado no lançamento das 22h)"
+        else:
+            estado = "aprovada, *ainda não lançada*: entra no lançamento de hoje às 22h"
+        itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}"))
+    ultimo = {}
+    for i, m in enumerate(msgs):  # o rascunho mais recente de cada F (o "✏️ atualizado" substitui o anterior)
+        if m.get("sender") == "CONTACT":
+            continue
+        for n in RE_RASCUNHO.findall(m.get("content") or ""):
+            ultimo[(int(n), f"{ler_iso(m['createdAt']).astimezone(BRT):%d/%m}")] = i
+    for (n, dia), i in sorted(ultimo.items(), key=lambda kv: kv[1]):
+        m, chave = msgs[i], f"F{n} de {dia}"
+        if agora - ler_iso(m["createdAt"]) < ESPERA_RASCUNHO or any(c == chave for c, _ in itens):
+            continue
+        fechou = re.compile(rf"(?:✅|⏭️|🧾)\s*\*?F{n}\b", re.I)
+        respondeu = re.compile(rf"\b(?:ok|editar|nao|não)\s*f\s*{n}\b", re.I)
+        if any(fechou.search(x.get("content") or "") if x.get("sender") != "CONTACT"
+               else respondeu.search(norm(x.get("content")) or "") for x in msgs[i + 1:]):
+            continue
+        texto = m.get("content") or ""
+        quem = _quem(texto)
+        if "⟨ ⟩" in texto:
+            falta = RE_FALTA.search(texto)
+            estado = (f"esperando dado ({'falta ' + falta.group(1).strip() if falta else 'campo com ⟨ ⟩'}) → "
+                      f"*EDITAR F{n}: dado que falta*")
+        else:
+            estado = f"esperando confirmação → *OK F{n}* · *EDITAR F{n}: ajuste* · *NÃO F{n}*"
+        itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}"))
+    return itens
+
+
+def avisar_pendencias(zaia, msgs, agora):
+    """Uma vez por dia útil, a partir das 8h, lista no grupo do financeiro o que está parado."""
+    local = agora.astimezone(BRT)
+    hoje = local.date()
+    if local.weekday() >= 5 or not HORA_AVISO <= local.hour < HORA_AVISO_FIM or _estado["aviso_fin"] == hoje:
+        return
+    cab = f"{AVISO_PENDENCIAS} — {local:%d/%m}*"
+    if any(m.get("sender") != "CONTACT" and _sem_assinatura(m.get("content")).startswith(cab) for m in msgs):
+        _estado["aviso_fin"] = hoje
+        return
+    itens = pendencias_financeiro(msgs, agora)
+    _estado["aviso_fin"] = hoje
+    if not itens:
+        return
+    texto = (cab + "\n" + "\n".join(linha for _, linha in itens)
+             + "\n_Despesa aprovada é lançada no EasyJur às 22h e confirmada aqui com 🧾. "
+             "Se algo da lista já foi resolvido, responda o código (ex.: NÃO F4) ou ignore._")
+    try:
+        zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO_FINANCEIRO, texto=texto)
+        _log(f"aviso de pendências do financeiro: {len(itens)} item(ns)")
+    except Exception as erro:
+        _estado["aviso_fin"] = None  # tenta de novo na próxima volta
+        _log(f"aviso de pendências não enviado: {type(erro).__name__}")
+
+
 def atualizar_despesas(zaia, agora):
     """A cada 5 min confere os grupos do financeiro e grava despesas.json só quando a lista muda."""
     if _estado["despesas_em"] and agora - _estado["despesas_em"] < INTERVALO_DESPESAS:
@@ -212,6 +307,7 @@ def atualizar_despesas(zaia, agora):
     except Exception as erro:
         _log(f"despesas: grupo não lido: {type(erro).__name__}")
         return
+    avisar_pendencias(zaia, msgs, agora)
     pend = despesas_pendentes(msgs, agora)
     if pend == _estado["despesas"]:
         return

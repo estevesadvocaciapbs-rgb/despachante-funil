@@ -151,3 +151,65 @@ z.grupos["claude-grupo-18"].append(m("CONTACT", "ok f3", 13, "Lucas Seoane"))
 p.rodada(z, INICIO + timedelta(minutes=14))
 assert fin == [1, 1] and not chamadas
 print("OK — grupo do financeiro acorda só a rotina financeira")
+
+# Aviso da manhã no grupo do financeiro (caso real de 21-22/10/2026: F4 esperando forma, F5/F6 aprovadas sem 🧾)
+from datetime import datetime as _dt
+def mg(sender, texto, iso, nome=None):
+    return {"sender": sender, "senderName": nome, "content": texto, "createdAt": iso}
+GRUPO18 = [
+    mg("CONTACT", "Dar baixa no pagamento (DESPESA) para CODELAW Laura, R$ 1.250,00 em 21/10/2026", "2026-10-22T00:13:20.000Z", "Danielle Esteves"),
+    mg("AGENT", "*Annie*:\n💸 *DESPESA F4* — Pedido de: Dra. Danielle (grupo Financeiro)\nTipo: Despesa do escritório\n"
+       "Favorecido: CODELAW Laura\nValor: R$ 1.250,00 · PAGO em 21/10 · forma ⟨ ⟩ · banco NUBANK\n"
+       "⚠️ falta forma de pagamento (a imagem enviada em grupo não é lida): use EDITAR F4: Pix\n👉 Confirme: *OK F4*", "2026-10-22T00:21:36.971Z"),
+    mg("AGENT", "*Annie*:\n💸 *DESPESA F5* — Pedido de: Dr. Lucas (privado)\nFavorecido: Dr. Lucas Seoane\nValor: R$ 225,00 · forma ⟨ ⟩", "2026-10-22T00:52:04.000Z"),
+    mg("CONTACT", "Editar f5: 3 parcelas pagas, no pix", "2026-10-22T01:02:28.000Z", "Lucas Seoane"),
+    mg("AGENT", "*Annie*:\n✅ F5 despesa aprovada por Dr. Lucas (EDITAR) — entra no lançamento das 22h.\nDados finais: Tipo: Repasse · "
+       "Favorecido: Dr. Lucas Seoane\n\n💸 *DESPESA F6* — Pedido de: Dr. Lucas (privado)\nFavorecido: Dr. Lucas Seoane\nValor: R$ 350,00 · forma ⟨ ⟩",
+       "2026-10-22T01:21:48.000Z"),
+    mg("CONTACT", "Editar f6: pago em 15/09, pix", "2026-10-22T01:45:19.000Z", "Lucas Seoane"),
+    mg("AGENT", "*Annie*:\n✅ F6 despesa aprovada por Dr. Lucas (EDITAR) — entra no lançamento das 22h.\nDados finais: Favorecido: Dr. Lucas Seoane\n\n"
+       "💰 *BAIXA F7* — Pedido de: Dr. Lucas\nreceita nº 5217483\n👉 *OK F7*", "2026-10-22T01:51:38.000Z"),
+    mg("CONTACT", "Ok F7", "2026-10-22T02:20:15.000Z", "Lucas Seoane"),
+    mg("AGENT", "*Annie*:\n✅ F7 baixa feita — receita nº 5217483", "2026-10-22T02:22:50.000Z"),
+]
+manha = _dt(2026, 10, 22, 11, 5, tzinfo=timezone.utc)  # 08:05 em Belém
+itens = dict(p.pendencias_financeiro(GRUPO18, manha))
+assert set(itens) == {"F4 de 21/10", "F5 de 21/10", "F6 de 21/10"}, itens
+assert "esperando dado (falta forma de pagamento)" in itens["F4 de 21/10"] and "CODELAW Laura" in itens["F4 de 21/10"]
+assert "entra no lançamento de hoje às 22h" in itens["F5 de 21/10"]  # aprovada depois das 22h de ontem
+assert "Dr. Lucas Seoane" in itens["F6 de 21/10"]  # favorecido no meio da linha dos "Dados finais"
+# no dia seguinte, sem 🧾, vira alerta de atraso
+amanha = dict(p.pendencias_financeiro(GRUPO18, _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc)))
+assert "já devia ter entrado" in amanha["F5 de 21/10"]
+# 🧾 e EDITAR do advogado tiram da lista
+resolvido = GRUPO18 + [mg("AGENT", "*Annie*:\n🧾 F4 de 21/10 lançada no EasyJur\n🧾 F5 de 21/10 — já existia\n🧾 F6 de 21/10 — idem",
+                          "2026-10-22T13:00:00.000Z")]
+assert p.pendencias_financeiro(resolvido, _dt(2026, 10, 22, 15, 0, tzinfo=timezone.utc)) == []
+assert "F4 de 21/10" not in dict(p.pendencias_financeiro(GRUPO18 + [mg("CONTACT", "EDITAR F4: Pix", "2026-10-22T10:00:00.000Z", "Danielle Esteves")], manha))
+
+class FakeZEnvio(FakeZ):
+    def __init__(self, grupos):
+        super().__init__(grupos=grupos)
+        self.enviadas = []
+    def chamar(self, f, **a):
+        if f == "enviar_mensagem_grupo":
+            assert a["assinatura"] == "ia" and a["grupoId"] == "claude-grupo-18"
+            self.enviadas.append(a["texto"])
+            self.grupos["claude-grupo-18"].append(mg("AGENT", "*Annie*:\n" + a["texto"], "2026-10-22T11:06:00.000Z"))
+            return {}
+        return super().chamar(f, **a)
+
+novo_plantao(); p._estado["aviso_fin"] = None
+z = FakeZEnvio({"claude-grupo-18": list(GRUPO18)})
+p.avisar_pendencias(z, z.grupos["claude-grupo-18"], _dt(2026, 10, 22, 10, 30, tzinfo=timezone.utc))  # 07:30: cedo
+assert not z.enviadas
+p.avisar_pendencias(z, z.grupos["claude-grupo-18"], manha)
+assert len(z.enviadas) == 1 and z.enviadas[0].startswith("⏰ *Pendências do financeiro — 22/10*")
+assert "🧾 F" not in z.enviadas[0].split("\n_")[0] and not p.RE_DESP_APROVADA.search(z.enviadas[0])  # não confunde a fila
+p._estado["aviso_fin"] = None  # outro plantão no mesmo dia: acha o aviso no grupo e não repete
+p.avisar_pendencias(z, z.grupos["claude-grupo-18"], manha.replace(hour=13))
+assert len(z.enviadas) == 1
+p._estado["aviso_fin"] = None
+p.avisar_pendencias(z, z.grupos["claude-grupo-18"], _dt(2026, 10, 24, 11, 5, tzinfo=timezone.utc))  # sábado
+assert len(z.enviadas) == 1
+print("OK — aviso da manhã: aprovado sem 🧾 e rascunho parado, uma vez por dia útil")

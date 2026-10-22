@@ -163,6 +163,15 @@ Escritório (ou, para os antigos, no AUTOMAÇÃO)
 códigos, sem nenhum dado. A tarefa noturna do computador do escritório (22h) lê esse
 arquivo e só abre o EasyJur no Chrome quando a lista não está vazia.
 
+**Aviso da manhã no grupo do financeiro (desde 22/10/2026).** Nos dias úteis, a
+partir das 8h, o porteiro manda uma vez ao grupo Financeiro Escritório a lista
+"⏰ Pendências do financeiro — DD/MM" com: despesas aprovadas que nenhum lançamento
+das 22h confirmou com 🧾 (separando as que já deviam ter entrado das aprovadas depois
+das 22h da véspera) e rascunhos F parados há mais de 2 h sem resposta de advogado nem
+decisão (✅/⏭️/🧾), dizendo o que falta. Sem pendência, não manda nada. Nasceu do caso
+de 21/10: F4 ficou esperando a forma de pagamento sem ninguém lembrar, e F5/F6 ficaram
+"aprovadas" no grupo enquanto o lançamento da noite avisava só o Dr. Lucas no privado.
+
 ## Consumo da API do EasyJur (cota mensal de 10.000 chamadas)
 
 - O despachante lê a Za.Ia a cada minuto, mas só chama o EasyJur quando precisa:
