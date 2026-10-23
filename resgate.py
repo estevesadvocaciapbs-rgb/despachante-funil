@@ -2,8 +2,12 @@
 
 Roda dentro do plantão do despachante. Uma vez por hora lista no EasyJur os ATENDIMENTOS de lead
 (os que têm o telefone do cliente na descrição) e, para cada cliente, olha a reunião mais recente.
-A reunião "não aconteceu" quando, 2 horas depois do início:
-- o atendimento NÃO está Concluído no EasyJur (aberto ou cancelado pelo advogado);
+A reunião "não aconteceu POR FALTA DE RETORNO DO CLIENTE" quando, 2 horas depois do início:
+- no dia da reunião o cliente recebeu o lembrete/pedido de confirmação e NÃO respondeu nada até 2 horas
+  depois do horário (regra da usuária, 23/10: reunião cancelada pelo próprio advogado não entra);
+- o atendimento NÃO está Concluído no EasyJur (aberto, ou cancelado por falta de retorno);
+- ninguém da equipe falou com o cliente no dia da reunião, e a automação não avisou de cancelamento
+  ou remarcação;
 - não há reunião nova marcada para esse cliente;
 - ninguém da equipe escreveu ao cliente depois do horário e não há contrato/ZapSign na conversa;
 - o cliente não está esperando resposta (a última mensagem da conversa não é dele).
@@ -35,6 +39,11 @@ MARCA = "para remarcar a sua conversa"    # está em todas as mensagens de resga
 AVISO_ADV = "📵 *CLIENTE NÃO VEIO À REUNIÃO"
 AVISO_FIM = "📵 *CLIENTE SEM RETORNO"
 RE_TEL = re.compile(r"\b55\d{10,11}\b")
+# lembretes do dia da reunião (despachante: "Passando para lembrar do seu atendimento de hoje" e
+# "Passando para confirmar nosso atendimento de hoje ... Podemos confirmar sua presença?")
+RE_LEMBRETE = re.compile(r"(lembrar|confirmar)[^.?!]{0,60}(atendimento|reuniao|conversa)[^.?!]{0,40}\bhoje\b|"
+                         r"confirmar sua presenca")
+RE_CANCELADA = re.compile(r"\b(cancelad|cancelamos|cancelar|remarcad|remarcar|desmarcad)")
 RE_DESISTE = re.compile(
     r"nao (tenho|tem|quero) mais|nao quero (mais|seguir|continuar)|desist|ja resolvi|ja contratei|"
     r"outro advogado|outra advogada|nao preciso mais|pode cancelar|nao me (chame|mande|procure)|"
@@ -118,12 +127,24 @@ def reunioes_por_cliente(d, ej, agora):
 def proximo_passo(d, item, msgs, agora):
     """(n, quando) do próximo resgate a mandar, ou (None, motivo) se não é caso de mandar agora/mais."""
     inicio = inicio_da_reuniao(d, item)
-    depois = [m for m in msgs if d.ler_iso(m["createdAt"]) >= inicio - timedelta(minutes=30)]
+    dia = inicio.replace(hour=0, minute=0)
+    do_dia = [m for m in msgs if dia <= d.ler_iso(m["createdAt"]) < inicio + ESPERA_R1]
+    lembretes = [m for m in do_dia if m.get("sender") != "CONTACT" and d.ler_iso(m["createdAt"]) <= inicio
+                 and RE_LEMBRETE.search(d.sem_acento(m.get("content") or ""))]
+    if not lembretes:
+        return None, "sem lembrete no dia (reunião cancelada antes ou sem pedido de confirmação)"
+    if any(m.get("sender") == "CONTACT" for m in do_dia):
+        return None, "cliente respondeu no dia da reunião"
+    if any(m.get("sender") != "CONTACT" and m not in lembretes and MARCA not in (m.get("content") or "")
+           and RE_CANCELADA.search(d.sem_acento(m.get("content") or "")) for m in do_dia):
+        return None, "o escritório avisou cancelamento ou remarcação"
+    depois = [m for m in msgs if d.ler_iso(m["createdAt"]) >= dia]
     if any(e_humano(m) for m in depois):
         return None, "equipe falou com o cliente"
     if any("zapsign" in d.sem_acento(m.get("content") or "") for m in depois):
         return None, "contrato"
-    cliente = [m for m in depois if m.get("sender") == "CONTACT"]
+    # o que o cliente escreveu depois da janela da confirmação (antes dela ele não escreveu nada, ver acima)
+    cliente = [m for m in depois if m.get("sender") == "CONTACT" and d.ler_iso(m["createdAt"]) >= inicio + ESPERA_R1]
     if any(RE_DESISTE.search(d.sem_acento(m.get("content") or "")) for m in cliente):
         return None, "cliente desistiu"
     if msgs and msgs[-1].get("sender") == "CONTACT":
@@ -203,12 +224,13 @@ def rodada(zaia, easyjur_fn, agenda_fn, conversas, agora, contagem, d, pendentes
 
 
 def avisar_advogado(zaia, d, adv, nome, tel, inicio, item):
-    situacao = "cancelado por você" if item.get("status") == "S" else "ainda em aberto"
+    situacao = "cancelado no EasyJur" if item.get("status") == "S" else "ainda em aberto no EasyJur"
     try:
         zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(
             f"{AVISO_ADV} — {nome} ({tel})*\n"
-            f"A reunião de {inicio:%d/%m} às {inicio:%H}h{inicio:%M} está {situacao} no EasyJur e não vi sinal dela "
-            "(contrato, mensagem da equipe ou resposta do cliente). Mandei ao cliente novos horários seus para remarcar "
+            f"O cliente não respondeu à confirmação da reunião de {inicio:%d/%m} às {inicio:%H}h{inicio:%M} "
+            f"(atendimento {situacao}) e não vi sinal dela (contrato ou mensagem da equipe). "
+            "Mandei ao cliente novos horários seus para remarcar "
             "e vou repetir de tempos em tempos (2 dias úteis, 7, 15 e 30 dias) até ele responder.\n"
             "👉 Se a reunião aconteceu, marque Concluído no EasyJur que eu paro. Se for falar você mesmo com o "
             "cliente, é só escrever a ele pelo painel: eu paro também."))

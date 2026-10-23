@@ -131,9 +131,11 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   Google e as redes da Dra. Danielle (das 8h às 20h). Se o cliente estiver
   esperando resposta, espera; depois a conversa é encerrada como antes.
 - **Resgate de quem não veio** (`resgate.py`, de hora em hora, 8h–19h, seg–sex):
-  reunião de lead (atendimento com telefone na descrição) que, 2 horas depois do
-  início, não foi concluída, não tem reunião nova, nem mensagem da equipe, nem
-  contrato, e o cliente não está esperando resposta → a Annie manda novos horários
+  reunião de lead (atendimento com telefone na descrição) em que o cliente recebeu
+  o lembrete/pedido de confirmação do dia e NÃO respondeu nada até 2 horas depois
+  do horário, que não foi concluída, não tem reunião nova, nem mensagem da equipe
+  no dia, nem aviso de cancelamento/remarcação do escritório, nem contrato (reunião
+  cancelada pelo próprio advogado não entra) → a Annie manda novos horários
   do mesmo advogado (R1). Repete com R2 (2 dias úteis), R3 (7 dias), R4 (15) e R5
   (30). A resposta do cliente segue o fluxo normal da oferta (escolha → gravação no
   EasyJur). Para quando: atendimento concluído, reunião nova, alguém da equipe

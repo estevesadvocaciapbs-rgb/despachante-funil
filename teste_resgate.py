@@ -82,7 +82,10 @@ def rodar(msgs, agora, itens=None, pendentes=()):
     return z, leads
 
 
-antes = [m("AGENT", "*Annie*:\nBom dia, Ana! Lembrete do seu atendimento de hoje.", REUNIAO - timedelta(hours=6))]
+antes = [m("AGENT", "*Annie*:\nBom dia, Ana! Passando para lembrar do seu atendimento de hoje, às 14h00, com a dra. "
+                    "Fernanda Mesquita, por videochamada.", REUNIAO - timedelta(hours=6)),
+         m("AGENT", "*Annie*:\nOlá, Ana! Passando para confirmar nosso atendimento de hoje às 14h00 com a dra. "
+                    "Fernanda Mesquita. Podemos confirmar sua presença?", REUNIAO - timedelta(hours=1))]
 
 # 1 hora depois da reunião: ainda espera
 z, _ = rodar(antes, REUNIAO + timedelta(hours=1))
@@ -118,10 +121,20 @@ for extra in (m("USER", "*Dra. Fernanda Mesquita*:\nAna, te liguei agora.", REUN
 # cliente esperando resposta: não manda (é pendência da equipe)
 z, _ = rodar(antes + [m("CONTACT", "oi, desculpa", REUNIAO + timedelta(hours=1))], REUNIAO + timedelta(hours=3))
 assert not [f for f, a in z.env if f == "agendar_mensagem"]
-# cancelado pelo advogado (S) também é reunião que não aconteceu
+# cancelado no EasyJur por falta de retorno (lembretes sem resposta) também entra
 z, _ = rodar(antes, REUNIAO + timedelta(hours=3), [item(status="S")])
-assert [f for f, a in z.env if f == "agendar_mensagem"] and "cancelado por você" in \
+assert [f for f, a in z.env if f == "agendar_mensagem"] and "não respondeu à confirmação" in \
     [a for f, a in z.env if f == "enviar_mensagem"][0]["texto"]
+# regra da usuária (23/10): reunião cancelada pelo advogado não entra — sem lembrete no dia (cancelada antes),
+# cliente que respondeu no dia (confirmou ou avisou) ou escritório avisando cancelamento/remarcação
+for msgs_dia in ([],
+                 antes + [m("CONTACT", "confirmo, obrigada", REUNIAO - timedelta(minutes=50)),
+                          m("AGENT", "*Annie*:\nPerfeito!", REUNIAO - timedelta(minutes=49))],
+                 [m("CONTACT", "bom dia", REUNIAO - timedelta(hours=7))] + antes,
+                 antes + [m("AGENT", "*Annie*:\nAna, a Dra. Fernanda precisou cancelar a reunião de hoje e vai remarcar.",
+                            REUNIAO - timedelta(minutes=30))]):
+    z, _ = rodar(msgs_dia, REUNIAO + timedelta(hours=3), [item(status="S")])
+    assert not [f for f, a in z.env if f == "agendar_mensagem"], msgs_dia
 # reunião anterior à entrada no ar: não chama
 z, _ = rodar(antes, datetime(2026, 10, 23, 18, 0, tzinfo=d.BRT), [item(data="2026-10-22")])
 assert not [f for f, a in z.env if f == "agendar_mensagem"]
