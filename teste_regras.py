@@ -648,3 +648,149 @@ assert not [f for f, a in _ej3.env if f.startswith("create")]
 assert not [a for f, a in _z3.env if f == "enviar_mensagem" and "ficou marcado" in a.get("texto", "")]
 assert "Dra. Danielle" in [a["mensagem"] for f, a in _z3.env if f == "agendar_mensagem"][0]
 print("OK — Dr. Lucas só online: pedido presencial vai para a Dra. Danielle")
+
+# --- 23/10: lead não aceitou a oferta. Outro horário → mais 2 horários; exceção/sem horário → privado do advogado
+_ofs = {("22", "10", "10", "30"), ("22", "10", "14", "00")}
+for _t, _esp in [(["não posso nesses"], "outro"), (["teria às 16h?"], "outro"), (["pode ser na quarta?"], None),
+                 (["Boa noite! Não consigo nesses horários"], "outro"), (["só consigo à noite"], "excecao"),
+                 (["teria 13h?"], "excecao"), (["pode ser sábado?"], "excecao"), (["só depois das 18h"], "excecao"),
+                 (["essa semana não dá, estou viajando"], "sem_horario"), (["estou sem tempo, depois eu vejo"], "sem_horario"),
+                 (["ok, obrigado"], None)]:
+    assert d.tipo_de_recusa(_t, _ofs) == _esp, (_t, d.tipo_de_recusa(_t, _ofs))
+
+_ag0 = datetime(2026, 10, 21, 9, 0, tzinfo=d.BRT)
+_liv = [datetime(2026, 10, 22, h, m, tzinfo=d.BRT) for h, m in ((10, 30), (11, 0), (14, 0), (16, 0))] + \
+       [datetime(2026, 10, 26, h, m, tzinfo=d.BRT) for h, m in ((10, 0), (15, 0))]
+_ja = {_liv[0], _liv[2]}
+assert d.escolher_outros(_liv, _ja, "não posso nesses", _ag0) == ([_liv[1], _liv[3]], True)
+assert d.escolher_outros(_liv, _ja, "teria às 16h?", _ag0)[0][0] == _liv[3]
+assert d.escolher_outros(_liv, _ja, "pode ser na segunda à tarde?", _ag0) == ([_liv[5]], True)
+assert d.escolher_outros(_liv, _ja, "semana que vem", _ag0) == ([_liv[4], _liv[5]], True)
+_s, _ok = d.escolher_outros(_liv, _ja, "na sexta", _ag0)  # sexta não tem atendimento: oferece os próximos
+assert _s and not _ok
+
+
+class AgLivre:
+    def __init__(s, livres, itens=()): s.l = livres; s.i = list(itens)
+    def livres(s, adv, reservados): return [x for x in s.l if (adv["id"], x) not in reservados]
+    def itens(s, adv_id, a, b, tipo=None): return s.i
+
+
+class ConvL:
+    def __init__(s, m): s.m = m
+    def de(s, tel): return s.m.get(tel, (None, []))
+
+
+_lista2 = d.texto_da_oferta("Júnior", d.FERNANDA, [_d1, _d2])
+_o = _m("USER", "*Annie*:\n" + _lista2, "2026-10-21T12:00:00.000Z")
+_pede = _m("CONTACT", "não posso nesses, teria mais tarde?", "2026-10-21T12:02:00.000Z")
+_ann = _m("AGENT", "*Annie*:\nSem problema! Já te mando outras opções por aqui, tá bom?", "2026-10-21T12:02:20.000Z")
+_agL = AgLivre([_d1, _d2, datetime(2026, 10, 22, 15, 30, tzinfo=d.BRT), datetime(2026, 10, 22, 16, 30, tzinfo=d.BRT)])
+_tA = datetime(2026, 10, 21, 12, 2, 30, tzinfo=_tz2.utc)
+d._reofertas.clear(); d._avisos_advogado.clear()
+_z = ZP()
+_cv = ConvL({})
+d.outros_horarios(_z, _cv, _conv, _lead, [_o, _pede, _ann], [_o], lambda: _agL, set, _tA, {})
+assert not _z.env  # espera 1 minuto (a Annie responde primeiro)
+d.outros_horarios(_z, _cv, _conv, _lead, [_o, _pede, _ann], [_o], lambda: _agL, set, _tA + _td2(minutes=1), {})
+_r = [a["mensagem"] for f, a in _z.env if f == "agendar_mensagem"]
+assert len(_r) == 1 and d.MARCA_MAIS in _r[0] and d.MARCA_OFERTA in _r[0], _r
+assert "22/10 às 15:30" in _r[0] and "22/10 às 16:30" in _r[0] and "14:00" not in _r[0], _r
+assert not [f for f, a in _z.env if f.startswith("enviar_mensagem")]  # nada no grupo
+# a nova oferta vale como oferta: escolha, confirmação e reserva seguem o fluxo normal
+_o2 = _m("USER", "*Annie*:\n" + _r[0], "2026-10-21T12:04:00.000Z")
+assert d.escolha_do_lead([_o, _pede, _ann, _o2, _m("CONTACT", "16:30", "2026-10-21T12:05:00.000Z")], _o2, _o2["content"],
+                         _tA + _td2(minutes=9))[1] == ("22", "10", "16", "30")
+# depois de 2 novas ofertas recusadas, o advogado é avisado no privado
+_o3 = _m("USER", "*Annie*:\nSem problema! A Dra. Fernanda Mesquita pode te atender por videochamada "
+                 f"{d.MARCA_MAIS}. {d.MARCA_OFERTA}:\n\n• segunda-feira, 26/10 às 10:00\n\nQual fica melhor pra você?",
+         "2026-10-21T12:10:00.000Z")
+_rec = [_o, _pede, _ann, _o2, _m("CONTACT", "também não dá", "2026-10-21T12:06:00.000Z"), _o3,
+        _m("CONTACT", "não consigo nesses também", "2026-10-21T12:11:00.000Z")]
+_z = ZP()
+d.outros_horarios(_z, _cv, _conv, _lead, _rec, [_o, _o2, _o3], lambda: _agL, set, _tA + _td2(minutes=14), {})
+_pv = [a for f, a in _z.env if f == "enviar_mensagem"]
+assert len(_pv) == 1 and _pv[0]["numero"] == d.FERNANDA["tel"] and "NÃO ACEITOU AS OFERTAS" in _pv[0]["texto"], _pv
+assert "OFERECER Júnior" in _pv[0]["texto"] and "GRAVAR Júnior" in _pv[0]["texto"]
+assert not [f for f, a in _z.env if f == "agendar_mensagem"]
+# exceção de horário: espera o lead terminar (5 min) e avisa o advogado no privado, com os horários livres dele
+d._avisos_advogado.clear()
+_exc = [_o, _m("CONTACT", "Trabalho o dia todo, só consigo à noite ou sábado", "2026-10-21T12:02:00.000Z")]
+_z = ZP()
+d.outros_horarios(_z, _cv, _conv, _lead, _exc, [_o], lambda: _agL, set, _tA + _td2(minutes=2), {})
+assert not _z.env
+d.outros_horarios(_z, _cv, _conv, _lead, _exc, [_o], lambda: _agL, set, _tA + _td2(minutes=5), {})
+_pv = [a for f, a in _z.env if f == "enviar_mensagem"]
+assert len(_pv) == 1 and "EXCEÇÃO DE HORÁRIO" in _pv[0]["texto"] and "só consigo à noite" in _pv[0]["texto"]
+assert "15h30" in _pv[0]["texto"] and not [f for f, a in _z.env if f == "enviar_mensagem_grupo"]
+d.outros_horarios(_z, _cv, _conv, _lead, _exc, [_o], lambda: _agL, set, _tA + _td2(minutes=9), {})
+assert len([f for f, a in _z.env if f == "enviar_mensagem"]) == 1  # uma vez só
+print("OK — outro horário: mais 2 horários; exceção e sem horário: aviso no privado do advogado")
+
+# OFERECER e GRAVAR no privado do advogado com o escritório
+assert d.ler_oferecer("OFERECER Ana 28/10 19h e 29/10 12h30")[1] == [(28, 10, 19, 0), (29, 10, 12, 30)]
+assert d.ler_oferecer("oferecer Ana Souza 28/10 às 19:00 ou 20h")[1] == [(28, 10, 19, 0), (28, 10, 20, 0)]
+assert d.ler_oferecer("vou oferecer café") is None
+
+
+class ZPriv(ZP):
+    def chamar(s, f, **a):
+        s.env.append((f, a))
+        if f == "buscar_contatos":
+            return {"contatos": []}
+        return {}
+
+
+_leadA = {"nome": "Júnior Teste", "tel": "5594900000009", "texto": "Família"}
+_cvA = ConvL({"5594900000009": (_conv, [_o])})
+_agora_p = datetime(2026, 10, 21, 15, 0, tzinfo=_tz2.utc)
+_priv = {d.FERNANDA["tel"]: [_m("CONTACT", "OFERECER Júnior 28/10 19h e 29/10 12h30", "2026-10-21T14:58:00.000Z")]}
+_zp = ZPriv()
+d.comandos_dos_advogados(_zp, _cvA, lambda: EJG(), lambda: AgLivre([]), [_leadA], [], _agora_p, {}, {}, _priv)
+_to_lead = [a["mensagem"] for f, a in _zp.env if f == "agendar_mensagem"]
+assert len(_to_lead) == 1 and d.MARCA_ESPECIAL in _to_lead[0] and "Fernanda" in _to_lead[0], _to_lead
+assert "28/10 às 19:00" in _to_lead[0] and "29/10 às 12:30" in _to_lead[0]
+_resp = [a for f, a in _zp.env if f == "enviar_mensagem"]
+assert _resp and _resp[0]["numero"] == d.FERNANDA["tel"] and "Ofereci" in _resp[0]["texto"]
+# rodada seguinte com a resposta já no privado: não repete
+_priv[d.FERNANDA["tel"]].append(_m("USER", _resp[0]["texto"], "2026-10-21T14:59:00.000Z"))
+_zp2 = ZPriv()
+d.comandos_dos_advogados(_zp2, _cvA, lambda: EJG(), lambda: AgLivre([]), [_leadA], [], _agora_p, {}, {}, _priv)
+assert not _zp2.env
+# horário especial ocupado: não envia
+_ocup = [{"tipo": "AUDIENCIA", "status": "A", "hora_inicio": "18:30:00", "hora_fim": "19:30:00"}]
+_zp3 = ZPriv()
+d.comandos_dos_advogados(_zp3, _cvA, lambda: EJG(), lambda: AgLivre([], _ocup), [_leadA], [], _agora_p, {}, {},
+                         {d.FERNANDA["tel"]: [_m("CONTACT", "OFERECER Júnior 28/10 19h", "2026-10-21T14:58:30.000Z")]})
+assert not [f for f, a in _zp3.env if f == "agendar_mensagem"]
+assert "já tem compromisso" in [a["texto"] for f, a in _zp3.env if f == "enviar_mensagem"][0]
+# GRAVAR no privado: grava com o advogado dono do privado e responde lá
+d._gravadas.clear(); d._falhas.clear()
+_zp4, _ej4 = ZPriv(), EJG()
+d.comandos_dos_advogados(_zp4, _cvA, lambda: _ej4, lambda: d.Agenda(_ej4, _agora_p.astimezone(d.BRT)), [_leadA], [],
+                         _agora_p, {"reunioes": 0}, {},
+                         {d.DANIELLE["tel"]: [_m("CONTACT", "GRAVAR Júnior 28/10 19h", "2026-10-21T14:58:40.000Z")]})
+_agd = [a for f, a in _ej4.env if f == "create_agenda"][0]
+assert (_agd["id_advogado"], _agd["data"], _agd["hora_inicio"]) == (d.DANIELLE["id"], "2026-10-28", "19:00")
+assert "Gravado" in [a["texto"] for f, a in _zp4.env if f == "enviar_mensagem" and a["numero"] == d.DANIELLE["tel"]][-1]
+# mensagem de cliente no privado de outro número não vale como comando
+_zp5 = ZPriv()
+d.comandos_dos_advogados(_zp5, _cvA, lambda: EJG(), lambda: AgLivre([]), [_leadA], [], _agora_p, {}, {},
+                         {"5594900000077": [_m("CONTACT", "OFERECER Júnior 28/10 19h", "2026-10-21T14:58:00.000Z")]})
+assert not _zp5.env
+print("OK — OFERECER e GRAVAR no privado do advogado com o escritório")
+
+# o lead escolhe o horário especial (19h, fora da grade): grava sem acusar conflito de agenda
+_esp_txt = _to_lead[0]
+_oe = _m("USER", "*Annie*:\n" + _esp_txt, "2026-10-21T15:01:00.000Z")
+_ce = _m("AGENT", "*Annie*:\nPerfeito, Júnior! Seu atendimento com a Dra. Fernanda ficou marcado para quarta-feira, "
+                  "28/10, às 19h00, por videochamada.", "2026-10-21T15:03:00.000Z")
+d._gravadas.clear(); d._falhas.clear()
+_z6, _ej6 = ZP(), EJG()
+d.confirmar(_z6, ConvF(_conv, [_o, _oe, _m("CONTACT", "19h", "2026-10-21T15:02:00.000Z"), _ce]), lambda: _ej6,
+            lambda: AgLivre([]), [_leadA], [], datetime(2026, 10, 21, 15, 10, tzinfo=_tz2.utc),
+            {"reunioes": 0, "conflitos": 0})
+_ag6 = [a for f, a in _ej6.env if f == "create_agenda"]
+assert _ag6 and _ag6[0]["hora_inicio"] == "19:00" and _ag6[0]["id_advogado"] == d.FERNANDA["id"], _ag6
+assert not [a for f, a in _z6.env if f == "enviar_mensagem_grupo" and "CONFLITO" in a["texto"]]
+print("OK — horário especial do advogado é gravado sem acusar conflito")

@@ -53,14 +53,24 @@ pode entrar aqui**. O que garante isso:
 
 - Ao gravar uma reunião, o despachante agenda dois lembretes ao cliente: às 8h
   do dia (só quando a reunião é às 10h ou depois) e 1 hora antes.
-- Lead que pede outro dia/hora depois da oferta gera no grupo Firma 2026 o aviso
-  "🕐 LEAD PEDIU OUTRO HORÁRIO".
+- Lead que pede outro dia/hora depois da oferta (desde 23/10/2026): 1 minuto depois a
+  automação manda **mais 2 horários livres**, respeitando o dia, o turno ou a hora que
+  ele citou (até 2 vezes por oferta). Não vai nada ao grupo.
+- **Exceção de horário** (noite, almoço, sábado/domingo, depois das 18h), **lead sem
+  horário** (viajando, "essa semana não dá", "depois eu vejo"), lead que recusou as 2
+  novas ofertas ou agenda sem vaga: 5 minutos depois da última mensagem dele, o
+  advogado da oferta recebe no **privado** o que o lead disse, os próximos horários
+  livres dele e os comandos prontos `OFERECER` e `GRAVAR`.
 - Se a equipe propõe um horário fora da oferta e o lead aceita, sai no grupo
   "📌 HORÁRIO COMBINADO FORA DA OFERTA" com o comando pronto.
-- Um advogado escreve no grupo (Firma 2026 ou AUTOMAÇÃO) `GRAVAR Hana 19/10 13h`
-  (opcional: `com Fernanda`) e o despachante grava pessoa, oportunidade e
-  atendimento no EasyJur, agenda os lembretes e confirma no grupo, sem IA.
-  O advogado padrão é o da última oferta feita ao lead.
+- Um advogado escreve no grupo (Firma 2026 ou AUTOMAÇÃO) **ou no privado dele com o
+  escritório** `GRAVAR Hana 19/10 13h` (opcional: `com Fernanda`) e o despachante grava
+  pessoa, oportunidade e atendimento no EasyJur, agenda os lembretes e confirma no
+  mesmo canal, sem IA. O advogado padrão é o dono do privado ou o da última oferta.
+- `OFERECER Ana 28/10 19h e 29/10 12h30` (grupo ou privado): manda ao lead esses
+  horários, que podem ser fora do expediente ("o advogado separou um horário especial
+  para você"). Antes confere se o advogado já tem compromisso nesse horário. Quando o
+  lead escolhe, a reunião é gravada normalmente.
   Acrescente `presencial` (ex.: `GRAVAR Hana 19/10 13h presencial`) para gravar
   como atendimento no escritório.
 

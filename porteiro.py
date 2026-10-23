@@ -100,8 +100,8 @@ def resolvido_pelo_codigo(texto, quem):
         # no privado do Dr. Lucas a secretaria só executa CLIENTE; o resto (AGENDAR...) é do Secretário com IA
         if quem != "lucas" or all(c[0].startswith("CLIENTE") for _, c in cmds):
             return True
-    if all(re.match(r"^\s*\*?gravar\b", l, re.I) for l in linhas):
-        return True  # "GRAVAR Fulano 19/10 13h": o despachante grava sozinho
+    if all(re.match(r"^\s*\*?(gravar|oferecer)\b", l, re.I) for l in linhas):
+        return True  # "GRAVAR Fulano 19/10 13h" / "OFERECER Fulano 28/10 19h": o despachante faz sozinho
     if quem == "lucas" and secretaria.ordens_lucas(texto):
         return True
     return False
