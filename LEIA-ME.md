@@ -80,6 +80,11 @@ escritório?"), a conversa não para:
   advogado dizem "aqui no escritório" e **não levam link**. O evento do Google
   Agenda do escritório continua sendo criado (título "Reunião PRESENCIAL …").
 - "Não precisa ser presencial" ou "pode ser online" volta para videochamada.
+- **Dr. Lucas só atende online.** Se o lead de uma oferta dele pedir presencial, o
+  despachante (1 minuto depois) oferece os horários livres da **Dra. Danielle**,
+  presencial, e avisa o grupo Firma 2026 ("🔁 PRESENCIAL COM A DRA. DANIELLE"). Nunca
+  confirma presencial com o Dr. Lucas. Sem horário livre da Dra. Danielle, avisa o
+  grupo ("📍 PRESENCIAL SEM HORÁRIO") para a equipe combinar.
 
 ## Google Agenda pelo despachante (ponte na conta do escritório)
 

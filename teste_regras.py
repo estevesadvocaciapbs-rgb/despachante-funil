@@ -510,12 +510,13 @@ assert d.ja_confirmado_ao_lead([_om, _cm], _om, _d1) and not d.ja_confirmado_ao_
 print("OK — oferta em lista: lida, escolhida e confirmada como a antiga")
 
 # --- 23/10: lead pede atendimento presencial depois da oferta (a conversa não pode parar) ---
+_listaF = d.texto_da_oferta("Júnior", d.FERNANDA, [_d1, _d2])
 for _t, _esp in [("Gostaria de atendimento presencial", "presencial"), ("Prefiro ir pessoalmente", "presencial"),
                  ("posso ir no escritório?", "presencial"), ("não posso online, só presencial", "presencial"),
                  ("não precisa ser presencial", "online"), ("pode ser por vídeo mesmo", "online"),
                  ("pode ser online", "online"), ("14h", None), ("ok", None)]:
     assert d.pede_presencial(_t) == _esp, (_t, d.pede_presencial(_t))
-_o1 = _m("USER", "*Annie*:\n" + _lista, "2026-10-21T12:53:02.508Z")
+_o1 = _m("USER", "*Annie*:\n" + _listaF, "2026-10-21T12:53:02.508Z")
 _p1 = _m("CONTACT", "Gostaria que fosse presencial", "2026-10-21T12:55:00.000Z")
 _an = _m("AGENT", "*Annie*:\nVou verificar com a equipe e já te retorno.", "2026-10-21T12:55:20.000Z")
 assert d.modo_da_conversa([_o1], _o1["createdAt"]) == "online"
@@ -538,37 +539,37 @@ d.DRY_RUN = False
 d._presencial_oferecido.clear()
 _z = ZP()
 # dentro dos 3 minutos: espera a Annie (mas segura o aviso de "outro horário")
-assert d.oferecer_presencial(_z, _conv, _lead, [_o1, _p1, _an], _o1, _lista, _t1, {}) and not _z.env
+assert d.oferecer_presencial(_z, _conv, _lead, [_o1, _p1, _an], _o1, _listaF, _t1, {}) and not _z.env
 # 3 minutos sem a Annie repetir os horários: repete os MESMOS horários, presencial
-assert d.oferecer_presencial(_z, _conv, _lead, [_o1, _p1, _an], _o1, _lista, _t1 + _td2(minutes=3), {})
+assert d.oferecer_presencial(_z, _conv, _lead, [_o1, _p1, _an], _o1, _listaF, _t1 + _td2(minutes=3), {})
 _rep = [a["mensagem"] for f, a in _z.env if f == "agendar_mensagem"]
 assert len(_rep) == 1 and d.MARCA_PRESENCIAL in _rep[0] and d.MARCA_OFERTA in _rep[0], _rep
-assert "• quinta-feira, 22/10 às 10:30\n• quinta-feira, 22/10 às 14:00" in _rep[0] and "Dr. Lucas" in _rep[0]
+assert "• quinta-feira, 22/10 às 10:30\n• quinta-feira, 22/10 às 14:00" in _rep[0] and "Dra. Fernanda" in _rep[0]
 assert [a.get("ativarIaAoResponder") for f, a in _z.env] == [True]
 # rodada seguinte (mensagem ainda agendada): não repete
-assert d.oferecer_presencial(_z, _conv, _lead, [_o1, _p1, _an], _o1, _lista, _t1 + _td2(minutes=4), {})
+assert d.oferecer_presencial(_z, _conv, _lead, [_o1, _p1, _an], _o1, _listaF, _t1 + _td2(minutes=4), {})
 assert len([f for f, a in _z.env if f == "agendar_mensagem"]) == 1
 # a repetição já está na conversa: segue o fluxo normal; e a escolha seguinte é presencial
 _r1 = _m("USER", "*Annie*:\n" + _rep[0], "2026-10-21T13:00:00.000Z")
 _ch = _m("CONTACT", "às 14h", "2026-10-21T13:01:00.000Z")
 _conv_msgs = [_o1, _p1, _an, _r1, _ch]
-assert not d.oferecer_presencial(_z, _conv, _lead, _conv_msgs, _o1, _lista, _t1 + _td2(minutes=10), {})
+assert not d.oferecer_presencial(_z, _conv, _lead, _conv_msgs, _o1, _listaF, _t1 + _td2(minutes=10), {})
 _ofs = [x for x in _conv_msgs if d.MARCA_OFERTA in x["content"]]
 assert d.modo_da_conversa(_conv_msgs, d.inicio_do_ciclo(_ofs)) == "presencial"
 assert d.escolha_do_lead(_conv_msgs, _ofs[-1], _ofs[-1]["content"], _t1 + _td2(minutes=11))[1] == _sl[1]
 # alguém da equipe respondeu: não se mete
 d._presencial_oferecido.clear()
 _eq = _m("AGENT", "*Thalyta:* Vou ver com a Dra. e te falo", "2026-10-21T12:56:00.000Z")
-assert not d.oferecer_presencial(ZP(), _conv, _lead, [_o1, _p1, _eq], _o1, _lista, _t1 + _td2(minutes=5), {})
+assert not d.oferecer_presencial(ZP(), _conv, _lead, [_o1, _p1, _eq], _o1, _listaF, _t1 + _td2(minutes=5), {})
 # a Annie já repetiu os horários: não repete de novo
 _ar = _m("AGENT", "*Annie*:\nClaro! Pode ser presencial: 22/10 às 10:30 ou 22/10 às 14:00?", "2026-10-21T12:55:30.000Z")
-assert not d.oferecer_presencial(ZP(), _conv, _lead, [_o1, _p1, _ar], _o1, _lista, _t1 + _td2(minutes=5), {})
+assert not d.oferecer_presencial(ZP(), _conv, _lead, [_o1, _p1, _ar], _o1, _listaF, _t1 + _td2(minutes=5), {})
 print("OK — pedido presencial: mesmos horários repetidos, sem parar a conversa")
 
 # gravação presencial: local no escritório, nenhum link ao cliente, lembretes dizem "aqui no escritório"
 _zg, _ejg = ZP(), EJG()
 d._gravadas.clear(); d._falhas.clear()
-assert d.gravar_reuniao(_zg, _ejg, _conv, "Júnior Teste", _lead["tel"], d.LUCAS, _d2, "civel", "caso", [],
+assert d.gravar_reuniao(_zg, _ejg, _conv, "Júnior Teste", _lead["tel"], d.FERNANDA, _d2, "civel", "caso", [],
                         datetime(2026, 10, 21, 9, 0, tzinfo=d.BRT), {"reunioes": 0}, ("t", "x"), "teste",
                         modo="presencial")
 _ag = [a for f, a in _ejg.env if f == "create_agenda"][0]
@@ -595,3 +596,55 @@ _eA = d.escolha_do_lead(_mA, _mA[0], _ofA, datetime(2026, 10, 19, 17, 50, tzinfo
 assert _eA and _eA[1] == ("20", "10", "09", "30")
 assert d.modo_da_conversa(_mA, d.inicio_do_ciclo([_mA[0]])) == "presencial"
 print("OK — caso de 19/10: '9.30 presencial' vira reunião presencial confirmada")
+
+# --- 23/10: Dr. Lucas só atende online. Lead dele que pede presencial recebe os horários da Dra. Danielle.
+class AgDani:
+    def __init__(s, livres): s.l = livres; s.pedidos = []
+    def livres(s, adv, reservados):
+        s.pedidos.append(adv["id"])
+        return [x for x in s.l if (adv["id"], x) not in reservados]
+
+
+_dn1 = datetime(2026, 10, 26, 10, 0, tzinfo=d.BRT)
+_dn2 = datetime(2026, 10, 26, 14, 30, tzinfo=d.BRT)
+_ag = AgDani([_dn1, _dn2])
+_oL = _m("USER", "*Annie*:\n" + _lista, "2026-10-21T12:53:02.508Z")   # oferta do Dr. Lucas (videochamada)
+_pL = _m("CONTACT", "Pode ser 14h presencial?", "2026-10-21T12:55:00.000Z")
+_aL = _m("AGENT", "*Annie*:\nO Dr. Lucas atende só por videochamada, mas a Dra. Danielle pode te atender aqui no "
+                  "escritório. Já te mando os horários dela, tá bom?", "2026-10-21T12:55:20.000Z")
+d._presencial_oferecido.clear()
+_z = ZP()
+_t2 = datetime(2026, 10, 21, 12, 55, 40, tzinfo=_tz2.utc)
+assert d.oferecer_presencial(_z, _conv, _lead, [_oL, _pL, _aL], _oL, _lista, _t2, {}, lambda: _ag, set) and not _z.env
+assert d.oferecer_presencial(_z, _conv, _lead, [_oL, _pL, _aL], _oL, _lista, _t2 + _td2(minutes=1), {},
+                             lambda: _ag, set)
+_tx = [a["mensagem"] for f, a in _z.env if f == "agendar_mensagem"]
+assert len(_tx) == 1 and "Dr. Lucas atende só por videochamada" in _tx[0] and "a Dra. Danielle Esteves" in _tx[0], _tx
+assert "• segunda-feira, 26/10 às 10:00\n• segunda-feira, 26/10 às 14:30" in _tx[0] and "22/10" not in _tx[0], _tx
+assert d.advogado_do_texto(_tx[0]) is d.DANIELLE and _ag.pedidos == [d.DANIELLE["id"]]
+assert "PRESENCIAL COM A DRA. DANIELLE" in [a["texto"] for f, a in _z.env if f == "enviar_mensagem_grupo"][0]
+# a escolha seguinte é presencial com a Dra. Danielle (a nova oferta passa a ser a dela)
+_rL = _m("USER", "*Annie*:\n" + _tx[0], "2026-10-21T12:57:00.000Z")
+_msL = [_oL, _pL, _aL, _rL, _m("CONTACT", "14:30", "2026-10-21T12:58:00.000Z")]
+_ofL = [x for x in _msL if d.MARCA_OFERTA in x["content"]]
+assert d.modo_da_conversa(_msL, d.inicio_do_ciclo(_ofL)) == "presencial"
+assert d.escolha_do_lead(_msL, _ofL[-1], _ofL[-1]["content"], _t2 + _td2(minutes=9))[1] == ("26", "10", "14", "30")
+# sem horário da Dra. Danielle: avisa o grupo, uma vez
+d._presencial_oferecido.clear()
+_z2 = ZP()
+assert d.oferecer_presencial(_z2, _conv, _lead, [_oL, _pL], _oL, _lista, _t2 + _td2(minutes=2), {},
+                             lambda: AgDani([]), set)
+assert not [f for f, a in _z2.env if f == "agendar_mensagem"]
+assert "PRESENCIAL SEM HORÁRIO" in [a["texto"] for f, a in _z2.env if f == "enviar_mensagem_grupo"][0]
+# confirmar() nunca confirma presencial com o Dr. Lucas, mesmo que o lead escolha um horário dele
+class ConvF:
+    def __init__(s, conv, msgs): s.c = (conv, msgs)
+    def de(s, tel): return s.c
+d._presencial_oferecido.clear()
+_z3, _ej3 = ZP(), EJG()
+_msE = [_oL, _m("CONTACT", "às 14h, presencial", "2026-10-21T12:55:00.000Z")]
+d.confirmar(_z3, ConvF(_conv, _msE), lambda: _ej3, lambda: _ag, [_lead], [], _t2 + _td2(minutes=10), {"reunioes": 0})
+assert not [f for f, a in _ej3.env if f.startswith("create")]
+assert not [a for f, a in _z3.env if f == "enviar_mensagem" and "ficou marcado" in a.get("texto", "")]
+assert "Dra. Danielle" in [a["mensagem"] for f, a in _z3.env if f == "agendar_mensagem"][0]
+print("OK — Dr. Lucas só online: pedido presencial vai para a Dra. Danielle")

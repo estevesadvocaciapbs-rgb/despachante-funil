@@ -46,7 +46,9 @@ DANIELLE = {"id": 344269, "nome": "A Dra. Danielle Esteves", "curto": "Dra. Dani
 FERNANDA = {"id": 378457, "nome": "A Dra. Fernanda Mesquita", "curto": "Dra. Fernanda Mesquita",
             "tel": "5594991742534", "membro": "fernanda",
             "inicios": ["09:30", "14:30"], "bloqueia_dia_audiencia": True}
+# so_online: o Dr. Lucas só atende por videochamada; pedido presencial passa para a Dra. Danielle (usuária, 23/10)
 LUCAS = {"id": 344268, "nome": "O Dr. Lucas", "curto": "Dr. Lucas", "tel": "5524992432455", "membro": "lucas",
+         "so_online": True,
          # sem almoço: manhã até 11h30 (termina 12h), tarde a partir das 14h
          "inicios": ["10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30"]}
 ADVOGADOS = [DANIELLE, FERNANDA, LUCAS]
@@ -713,12 +715,20 @@ def inicio_do_ciclo(ofertas):
     return min(o["createdAt"] for o in ofertas if ultima - ler_iso(o["createdAt"]) <= timedelta(days=3))
 
 
-def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, contagem):
+ESPERA_TROCA = timedelta(minutes=1)  # Dr. Lucas → Dra. Danielle: a Annie não tem os horários dela, não há o que esperar
+
+
+def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, contagem, agenda_fn=None,
+                        reservados_fn=None):
     """O lead pediu atendimento presencial depois da oferta: repete os MESMOS horários, agora presencial.
 
-    Espera 3 minutos pela Annie. Devolve True enquanto cuida do pedido (esperando ou acabou de enviar),
-    para o aviso de "outro horário" não disparar por causa da mesma mensagem.
+    Se a oferta era de advogado que só atende online (Dr. Lucas), oferece no lugar os horários livres da
+    Dra. Danielle, presencial. Espera a Annie (3 min; 1 min na troca de advogado). Devolve True enquanto
+    cuida do pedido (esperando ou acabou de enviar), para o aviso de "outro horário" não disparar por causa
+    da mesma mensagem.
     """
+    adv = advogado_do_texto(txt_oferta)
+    troca = bool(adv.get("so_online"))
     depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
     pedidos = [m for m in depois if m.get("sender") == "CONTACT"
                and pede_presencial(m.get("content") or "") == "presencial"]
@@ -727,7 +737,8 @@ def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, conta
     p = pedidos[-1]
     resto = [m for m in depois if m["createdAt"] > p["createdAt"]]
     if any(m.get("sender") != "CONTACT" and (MARCA_PRESENCIAL in (m.get("content") or "")
-                                             or RE_SLOT.search(m.get("content") or "")) for m in resto):
+                                             or (not troca and RE_SLOT.search(m.get("content") or "")))
+           for m in resto):
         return False  # os horários já foram repetidos (pela Annie ou por aqui): segue o fluxo normal
     if any(m.get("sender") != "CONTACT" and not (m.get("content") or "").startswith("*Annie*") for m in resto):
         return False  # alguém da equipe assumiu a conversa
@@ -735,25 +746,49 @@ def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, conta
     if idade > timedelta(hours=24):
         return False
     chave = (lead["tel"], p["createdAt"])
-    if idade < ESPERA_PRESENCIAL or chave in _presencial_oferecido:
+    if idade < (ESPERA_TROCA if troca else ESPERA_PRESENCIAL) or chave in _presencial_oferecido:
         return True
-    slots = [data_do_texto(*s, agora) for s in dict.fromkeys(RE_SLOT.findall(txt_oferta))]
-    slots = [s for s in slots if s - agora >= timedelta(hours=1)]
-    if not slots:
-        return False  # os horários já passaram: fica com a equipe (aviso de outro horário)
-    _presencial_oferecido.add(chave)
-    adv = advogado_do_texto(txt_oferta)
     nome = primeiro_nome(conv["contact"].get("name") or lead["nome"])
-    texto = (f"Claro, {nome}! {adv['nome']} {MARCA_PRESENCIAL}, aqui no escritório, nos mesmos horários. "
-             f"{MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots) + "\n\nQual fica melhor pra você?")
+    if troca:
+        if not agenda_fn:
+            return True
+        _presencial_oferecido.add(chave)
+        slots = manha_e_tarde(agenda_fn().livres(DANIELLE, reservados_fn() if reservados_fn else set()))
+        nome_todo = (conv["contact"].get("name") or lead["nome"]).strip()
+        if not slots:
+            if not DRY_RUN:
+                zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
+                    f"📍 *PRESENCIAL SEM HORÁRIO — {nome_todo} ({lead['tel']})*\n"
+                    f"Era do {adv['curto']} (só online) e pediu atendimento presencial, mas a Dra. Danielle não tem "
+                    f"horário livre nos próximos {DIAS_UTEIS_JANELA} dias úteis. 👉 Equipe: combinar com o lead."))
+            log("presencial pedido em oferta do Dr. Lucas, Dra. Danielle sem horário — grupo avisado")
+            return True
+        quem = f"{DANIELLE['nome'][0].lower()}{DANIELLE['nome'][1:]}"
+        texto = (f"Claro, {nome}! {adv['nome']} atende só por videochamada, mas {quem} {MARCA_PRESENCIAL}, "
+                 f"aqui no escritório. {MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots)
+                 + "\n\nQual fica melhor pra você?")
+    else:
+        slots = [data_do_texto(*s, agora) for s in dict.fromkeys(RE_SLOT.findall(txt_oferta))]
+        slots = [s for s in slots if s - agora >= timedelta(hours=1)]
+        if not slots:
+            return False  # os horários já passaram: fica com a equipe (aviso de outro horário)
+        _presencial_oferecido.add(chave)
+        texto = (f"Claro, {nome}! {adv['nome']} {MARCA_PRESENCIAL}, aqui no escritório, nos mesmos horários. "
+                 f"{MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots) + "\n\nQual fica melhor pra você?")
     if DRY_RUN:
-        log("[simulação] repetiria os horários como presencial")
+        log("[simulação] ofereceria horários presenciais")
         return True
     quando = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:00.000Z")
     zaia.chamar("agendar_mensagem", contatoId=conv["contact"]["id"], conversaId=conv["id"],
                 mensagem=texto, dataHora=quando, assinatura="ia", ativarIaAoResponder=True)
+    if troca:
+        zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
+            f"🔁 *PRESENCIAL COM A DRA. DANIELLE — {nome_todo} ({lead['tel']})*\n"
+            f"Era do {adv['curto']} (só online) e pediu atendimento presencial. Ofereci os horários da Dra. Danielle: "
+            f"{'; '.join(texto_slot(s) for s in slots)}.\n_(aviso só para conhecimento)_"))
     contagem["presencial_oferecido"] = contagem.get("presencial_oferecido", 0) + 1
-    log("lead pediu presencial e ninguém respondeu: horários repetidos como presencial")
+    log("lead pediu presencial: horários presenciais oferecidos" + (" (Dra. Danielle no lugar do Dr. Lucas)"
+                                                                     if troca else ""))
     return True
 
 
@@ -1373,6 +1408,11 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 conf.append((m, batem[0]))
         motivo = "A Annie confirmou"
         modo = modo_da_conversa(msgs, inicio_do_ciclo(ofertas))
+        if modo == "presencial" and advogado_do_texto(txt).get("so_online"):
+            # Dr. Lucas só atende online: nada de confirmar presencial com ele; a vez é da Dra. Danielle
+            oferecer_presencial(zaia, conv, lead, msgs, ofertas[-1], txt, agora, contagem, agenda_fn,
+                                lambda: reservas_recentes([x for l in leads for x in conversas.de(l["tel"])[1]], agora))
+            continue
         if not conf:
             escolha = escolha_do_lead(msgs, ofertas[-1], txt, agora)
             if not escolha:
