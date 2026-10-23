@@ -140,34 +140,63 @@ z, _ = rodar(antes, datetime(2026, 10, 23, 18, 0, tzinfo=d.BRT), [item(data="202
 assert not [f for f, a in z.env if f == "agendar_mensagem"]
 print("OK — não chama quando a reunião aconteceu, foi remarcada, a equipe assumiu ou o cliente desistiu")
 
-# cadência: R2 dois dias úteis depois do R1; R3 7 dias depois do R2
+# cadência: R2, R3 e R4 em 3, 5 e 10 dias úteis depois da reunião (segunda 26/10 → qui 29/10, seg 02/11, seg 09/11)
 r1 = m("AGENT", "*Annie*:\nOi, Ana! ... " + r.MARCA + " ... Tenho estes horários:\n\n• terça-feira, 27/10 às 09:30",
        REUNIAO + timedelta(hours=2))
-z, leads = rodar(antes + [r1], REUNIAO + timedelta(days=1, hours=2))  # terça: ainda não
+z, leads = rodar(antes + [r1], REUNIAO + timedelta(days=2, hours=1))  # quarta: ainda não
 assert not [f for f, a in z.env if f == "agendar_mensagem"] and leads  # mas segue na confirmação
-z, _ = rodar(antes + [r1], REUNIAO + timedelta(days=2, hours=2, minutes=1))  # quarta: 2 dias úteis
+z, _ = rodar(antes + [r1], REUNIAO + timedelta(days=3, minutes=5))  # quinta 29/10 14h05: 3 dias úteis
 env = [a for f, a in z.env if f == "agendar_mensagem"]
-assert len(env) == 1 and "Passando de novo" in env[0]["mensagem"]
+assert len(env) == 1 and "Passando de novo" in env[0]["mensagem"], env
 assert not [f for f, a in z.env if f == "enviar_mensagem"]  # aviso ao advogado só no R1
-r2 = m("AGENT", "*Annie*:\nOi, Ana! Passando de novo " + r.MARCA, REUNIAO + timedelta(days=2, hours=2))
-z, _ = rodar(antes + [r1, r2], REUNIAO + timedelta(days=8, hours=2))
+r2 = m("AGENT", "*Annie*:\nOi, Ana! Passando de novo " + r.MARCA, REUNIAO + timedelta(days=3))
+z, _ = rodar(antes + [r1, r2], REUNIAO + timedelta(days=6, hours=-1))  # domingo/segunda cedo: ainda não
 assert not [f for f, a in z.env if f == "agendar_mensagem"]
-z, _ = rodar(antes + [r1, r2], REUNIAO + timedelta(days=9, hours=2, minutes=1))
+z, _ = rodar(antes + [r1, r2], REUNIAO + timedelta(days=7, minutes=5))  # segunda 02/11: 5 dias úteis
 assert "Ainda quer ajuda" in [a for f, a in z.env if f == "agendar_mensagem"][0]["mensagem"]
-# cliente respondeu ao R1 e sumiu: retoma 2 dias úteis depois da resposta
-resp = m("CONTACT", "vou ver e te falo", REUNIAO + timedelta(days=1, hours=3))
-ok = m("AGENT", "*Annie*:\nCombinado!", REUNIAO + timedelta(days=1, hours=3, minutes=1))
-z, _ = rodar(antes + [r1, resp, ok], REUNIAO + timedelta(days=2, hours=4))
+r3 = m("AGENT", "*Annie*:\nOi, Ana! Ainda quer ajuda? " + r.MARCA, REUNIAO + timedelta(days=7))
+z, _ = rodar(antes + [r1, r2, r3], REUNIAO + timedelta(days=14, minutes=5))  # segunda 09/11: 10 dias úteis
+assert "última mensagem" in [a for f, a in z.env if f == "agendar_mensagem"][0]["mensagem"]
+# cliente respondeu ao R1 e sumiu: o R2 espera também 2 dias úteis depois da resposta
+resp = m("CONTACT", "vou ver e te falo", REUNIAO + timedelta(days=2, hours=3))   # quarta 28/10
+ok = m("AGENT", "*Annie*:\nCombinado!", REUNIAO + timedelta(days=2, hours=3, minutes=1))
+z, _ = rodar(antes + [r1, resp, ok], REUNIAO + timedelta(days=3, minutes=5))  # quinta: ainda não
 assert not [f for f, a in z.env if f == "agendar_mensagem"]
-z, _ = rodar(antes + [r1, resp, ok], REUNIAO + timedelta(days=3, hours=4))
+z, _ = rodar(antes + [r1, resp, ok], REUNIAO + timedelta(days=4, hours=4))  # sexta 30/10 17h59
 assert [f for f, a in z.env if f == "agendar_mensagem"]
-# depois de 5 resgates: para e avisa o advogado 15 dias depois do último
-cinco = [m("AGENT", "*Annie*:\n" + r.MARCA, REUNIAO + timedelta(days=k, hours=2)) for k in (0, 2, 9, 24, 54)]
-z, _ = rodar(antes + cinco, REUNIAO + timedelta(days=60, hours=3))
+# depois de 4 convites: para e avisa o advogado 5 dias úteis depois do último
+quatro = [m("AGENT", "*Annie*:\n" + r.MARCA, REUNIAO + timedelta(days=k, hours=2)) for k in (0, 3, 7, 14)]
+z, _ = rodar(antes + quatro, REUNIAO + timedelta(days=17, hours=2))
 assert not [f for f, a in z.env if f == "agendar_mensagem"] and not [f for f, a in z.env if f == "enviar_mensagem"]
-z, _ = rodar(antes + cinco, REUNIAO + timedelta(days=70, hours=3))
+z, _ = rodar(antes + quatro, REUNIAO + timedelta(days=21, hours=3))
 assert r.AVISO_FIM in [a for f, a in z.env if f == "enviar_mensagem"][0]["texto"]
-print("OK — cadência do resgate (2 dias úteis, 7, 15, 30) e aviso final")
+print("OK — cadência do resgate (3, 5 e 10 dias úteis) e aviso final")
+
+# cliente que AVISOU no dia que não pode: novos horários logo depois do aviso (a reunião ainda nem passou)
+aviso = m("CONTACT", "Bom dia! Não vou poder ir hoje, surgiu um imprevisto no trabalho", REUNIAO - timedelta(hours=5))
+resposta = m("AGENT", "*Annie*:\nSem problema, Ana! Vou avisar a Dra. Fernanda.", REUNIAO - timedelta(hours=5) + timedelta(minutes=1))
+z, _ = rodar(antes[:1] + [aviso], REUNIAO - timedelta(hours=5) + timedelta(minutes=10))  # 10 min: espera
+assert not [f for f, a in z.env if f == "agendar_mensagem"]
+z, leads = rodar(antes[:1] + [aviso, resposta], REUNIAO - timedelta(hours=4, minutes=40))
+env = [a for f, a in z.env if f == "agendar_mensagem"]
+assert len(env) == 1 and "Sem problema, imprevistos acontecem" in env[0]["mensagem"] and r.MARCA in env[0]["mensagem"], env
+priv = [a for f, a in z.env if f == "enviar_mensagem"]
+assert priv and "avisou que não vai poder" in priv[0]["texto"] and "imprevisto no trabalho" in priv[0]["texto"]
+assert leads and leads[0]["tel"] == TEL
+# mesmo sem resposta da Annie (último é o aviso do cliente), o R1 sai
+z, _ = rodar(antes[:1] + [aviso], REUNIAO - timedelta(hours=4, minutes=40))
+assert [f for f, a in z.env if f == "agendar_mensagem"]
+# depois do R1, R2 em 3 dias úteis; a resposta da Annie com "remarcar" depois do aviso não conta como cancelamento do escritório
+r1a = m("AGENT", "*Annie*:\nOi, Ana! Sem problema, imprevistos acontecem. Já te mando novos horários " + r.MARCA,
+        REUNIAO - timedelta(hours=4, minutes=39))
+remarca = m("AGENT", "*Annie*:\nVamos remarcar, sim!", REUNIAO - timedelta(hours=4, minutes=38))
+z, _ = rodar(antes[:1] + [aviso, resposta, r1a, remarca], REUNIAO + timedelta(days=3, minutes=5))
+assert "Passando de novo" in [a for f, a in z.env if f == "agendar_mensagem"][0]["mensagem"]
+# aviso com desistência: não chama
+z, _ = rodar(antes[:1] + [m("CONTACT", "não vou poder, não tenho mais interesse", REUNIAO - timedelta(hours=5)), resposta],
+             REUNIAO - timedelta(hours=4))
+assert not [f for f, a in z.env if f == "agendar_mensagem"]
+print("OK — cliente que avisou no dia que não pode recebe novos horários e a mesma cadência")
 
 # a resposta ao resgate passa pela confirmação normal: escolheu → grava a reunião nova
 assert r.resumo_do_atendimento(item()["descricao"]) == "Família: guarda do filho."
@@ -228,3 +257,29 @@ zf.grupo, zf.env = [{"content": g[0]["texto"]}], []
 c.rodada(zf, agora_c + timedelta(minutes=6), {}, d)
 assert not [f for f, a in zf.env if f == "enviar_mensagem_grupo"]
 print("OK — comprovante de cliente avisado no grupo do financeiro (sem CPF/conta), uma vez só")
+
+# ---------------------------------------------------------------- sinal da pós-reunião (só roda inteira com novidade)
+import porteiro as p
+gravados = []
+p.gravar_no_ramo = lambda arq, conteudo, msg: gravados.append((arq, conteudo)) or True
+p._pos.update(gravado_em=None, motivos=set())
+agora_s = datetime(2026, 10, 27, 13, 0, tzinfo=UTC)
+assert p.avisar_posreuniao("reunião concluída no EasyJur", agora_s)
+assert gravados[-1][0] == "posreuniao.json" and "ultimo_evento" in gravados[-1][1] and TEL not in gravados[-1][1]
+assert not p.avisar_posreuniao("arquivo novo", agora_s + timedelta(minutes=3))  # no máximo a cada 10 min
+assert p.avisar_posreuniao("arquivo novo", agora_s + timedelta(minutes=11)) and "arquivo novo" in gravados[-1][1]
+# no despachante: link do ZapSign e arquivo de cliente acompanhado acordam; o lembrete M1 (sem link) não
+p._pos.update(gravado_em=None, motivos=set())
+gravados.clear()
+c._estado.update(ultima=None, avisados=set(), plantao=agora_s - timedelta(hours=1), pos_vistos=set())
+lembrete_m1 = m("AGENT", "*Annie*:\nPassando para lembrar do contrato que a Dra. Fernanda te enviou pelo ZapSign.",
+                agora_s - timedelta(minutes=5))
+zs = Z({TEL: (CONV, [lembrete_m1])}, lista=[{"conversa": {"id": CONV["id"]}, "phone": TEL, "contact": {"name": "Ana"}}])
+c.rodada(zs, agora_s, {}, d)
+assert not gravados
+link = m("USER", "*Dra. Fernanda Mesquita*:\nSegue o contrato: https://app.zapsign.com.br/verificar/abc", agora_s - timedelta(minutes=2))
+zs.conversas = {TEL: (CONV, [lembrete_m1, link])}
+c._estado["ultima"] = None
+c.rodada(zs, agora_s + timedelta(minutes=6), {}, d)
+assert gravados and "contrato" in gravados[-1][1]
+print("OK — sinal da pós-reunião: contrato, arquivo e reunião concluída (sem dados de cliente)")

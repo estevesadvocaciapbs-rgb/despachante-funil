@@ -130,18 +130,27 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   EasyJur → o cliente recebe uma vez o agradecimento com o link de avaliação do
   Google e as redes da Dra. Danielle (das 8h às 20h). Se o cliente estiver
   esperando resposta, espera; depois a conversa é encerrada como antes.
-- **Resgate de quem não veio** (`resgate.py`, de hora em hora, 8h–19h, seg–sex):
-  reunião de lead (atendimento com telefone na descrição) em que o cliente recebeu
-  o lembrete/pedido de confirmação do dia e NÃO respondeu nada até 2 horas depois
-  do horário, que não foi concluída, não tem reunião nova, nem mensagem da equipe
-  no dia, nem aviso de cancelamento/remarcação do escritório, nem contrato (reunião
-  cancelada pelo próprio advogado não entra) → a Annie manda novos horários
-  do mesmo advogado (R1). Repete com R2 (2 dias úteis), R3 (7 dias), R4 (15) e R5
-  (30). A resposta do cliente segue o fluxo normal da oferta (escolha → gravação no
-  EasyJur). Para quando: atendimento concluído, reunião nova, alguém da equipe
-  escreve ao cliente, contrato/ZapSign, o cliente diz que não quer mais, ou depois
-  do R5. O advogado recebe 📵 no privado no R1 e um aviso final 15 dias depois do R5.
-  Só reuniões a partir de 23/10/2026.
+- **Resgate de reunião que não aconteceu** (`resgate.py`, de hora em hora, 8h–19h,
+  seg–sex), para reunião de lead (atendimento com telefone na descrição) a partir
+  de 23/10/2026, em dois casos: (1) o cliente recebeu o lembrete/pedido de
+  confirmação do dia e NÃO respondeu nada até 2 horas depois do horário → R1 2 horas
+  depois; (2) o cliente avisou no dia que não vai poder → R1 ("Sem problema...")
+  15 minutos depois do aviso. O R1 traz 2 horários do mesmo advogado; se o cliente
+  não marcar, a Annie volta a chamar 3, 5 e 10 dias úteis depois da data da reunião
+  (R2, R3, R4 — o último diz que é a última mensagem), nunca antes de 2 dias úteis
+  depois da última mensagem do cliente. A resposta do cliente segue o fluxo normal
+  da oferta (escolha → gravação no EasyJur). Não entra: reunião cancelada pelo
+  próprio advogado (sem lembrete no dia, ou o escritório avisou cancelamento antes
+  do cliente), cliente que confirmou, equipe falando com o cliente, contrato,
+  desistência, atendimento concluído ou reunião nova. O advogado recebe 📵 no
+  privado no R1 e um aviso final 5 dias úteis depois do R4.
+- **Sinal da pós-reunião** (`porteiro.avisar_posreuniao`, arquivo `posreuniao.json`
+  no ramo "sinal", só hora e tipo): o despachante avisa quando há novidade —
+  link do ZapSign na conversa, arquivo novo de cliente com reunião recente,
+  reunião concluída no EasyJur, lista/encerramento de documentos de advogado no
+  Firma 2026 e tarefa "Revisão da documentação" concluída. A rotina pós-reunião
+  (Claude) só roda inteira na rodada das 9h ou quando há esse sinal ou e-mail novo
+  de assinatura do ZapSign; nas outras rodadas encerra em segundos.
 - **Comprovante de cliente** (`comprovantes.py`, a cada 5 min): imagem/PDF que a
   Za.Ia descreve como Pix/transferência/depósito para o escritório (Dra. Danielle,
   Dr. Lucas ou Dra. Fernanda como recebedor; ou sem recebedor legível quando o

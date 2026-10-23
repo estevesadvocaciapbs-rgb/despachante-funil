@@ -162,6 +162,30 @@ def avisar_financeiro():
     return gravar_no_ramo(ARQUIVO_FINANCEIRO, conteudo, "sinal: pedido no grupo do financeiro")
 
 
+ARQUIVO_POSREUNIAO = "posreuniao.json"   # sinal só da rotina pós-reunião (ela só roda inteira quando há novidade)
+ESPERA_POSREUNIAO = timedelta(minutes=10)
+_pos = {"gravado_em": None, "motivos": set()}
+
+
+def avisar_posreuniao(motivo, agora=None):
+    """Novidade para a pós-reunião (contrato enviado, arquivo de cliente, reunião concluída, lista de documentos,
+    tarefa de revisão concluída). Grava só a hora e o tipo — nenhum dado de cliente. No máximo a cada 10 min."""
+    agora = (agora or datetime.now(timezone.utc)).replace(microsecond=0)
+    _pos["motivos"].add(motivo)
+    if _pos["gravado_em"] and agora - _pos["gravado_em"] < ESPERA_POSREUNIAO:
+        return False
+    conteudo = json.dumps({"ultimo_evento": agora.isoformat().replace("+00:00", "Z"),
+                           "motivos": sorted(_pos["motivos"])}) + "\n"
+    if gravar_no_ramo(ARQUIVO_POSREUNIAO, conteudo, "sinal: novidade para a pós-reunião"):
+        _pos.update(gravado_em=agora, motivos=set())
+        _log(f"pós-reunião avisada ({motivo})")
+        return True
+    return False
+
+
+RE_DOCUMENTOS_GRUPO = re.compile(r"^\s*\*?documentos\b|documentacao (encerrada|fechada|completa)|documentos completos")
+
+
 def gravar_no_ramo(arquivo, conteudo, mensagem):
     """Grava um arquivo pequeno (sem dados de cliente) no ramo "sinal" do repositório."""
     import base64
@@ -347,7 +371,11 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
     for g in GRUPOS:
         try:
             msgs = (zaia.chamar("ler_grupo", grupoId=g, limit=15) or {}).get("mensagens", [])
-            achou += sum(1 for m in novos(msgs, _estado["desde"], g) if pedido_no_grupo(m))
+            recentes = novos(msgs, _estado["desde"], g)
+            achou += sum(1 for m in recentes if pedido_no_grupo(m))
+            if any(e_advogado_em_grupo(m) and RE_DOCUMENTOS_GRUPO.search(norm(_sem_assinatura(m.get("content"))))
+                   for m in recentes):
+                avisar_posreuniao("lista ou encerramento de documentos no grupo", agora)
         except Exception as erro:
             _log(f"grupo não lido: {type(erro).__name__}")
     try:  # grupo do financeiro: qualquer mensagem de advogado (pedido, comprovante, OK F3) acorda só o financeiro

@@ -1899,6 +1899,11 @@ def encerrar_concluidos(zaia, easyjur_fn, agora, contagem):
                         motivo=f"Atendimento de {item['data']} concluído no EasyJur ({adv['curto']})")
             _concluidos["feitos"].add(item["id"])
             log("atendimento concluído no EasyJur — conversa encerrada na Za.Ia")
+            try:  # reunião realizada: a pós-reunião acompanha contrato e documentos a partir daqui
+                import porteiro
+                porteiro.avisar_posreuniao("reunião concluída no EasyJur", datetime.now(timezone.utc))
+            except Exception as erro:
+                log(f"sinal da pós-reunião falhou: {type(erro).__name__}")
 
 
 # ---------------------------------------------------------------- principal

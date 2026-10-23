@@ -76,6 +76,13 @@ def rodada(zaia, agora, contagem, d, acordar_financeiro=None):
         "inicio": inicio.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         "fim": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")}) or {}
     achados = []
+    try:
+        import resgate
+        acompanhados = resgate._estado.get("tels") or set()
+    except Exception:
+        acompanhados = set()
+    desde = _estado.setdefault("plantao", agora)  # novidade para a pós-reunião: só o que chegou neste plantão
+    novidade = None
     for at in lista.get("atendimentos", []):
         conv = at.get("conversa") or {}
         tel = (at.get("phone") or "").strip()
@@ -85,6 +92,14 @@ def rodada(zaia, agora, contagem, d, acordar_financeiro=None):
                       key=lambda m: m["createdAt"])
         for i, m in enumerate(msgs):
             quando = d.ler_iso(m["createdAt"])
+            if quando >= desde and m["id"] not in _estado.setdefault("pos_vistos", set()):
+                _estado["pos_vistos"].add(m["id"])
+                # só o LINK do contrato (os lembretes da própria rotina citam "ZapSign" sem link e não podem acordá-la)
+                if "zapsign.com" in (m.get("content") or "").lower():
+                    novidade = "contrato (ZapSign) na conversa"
+                elif (tel in acompanhados and m.get("sender") == "CONTACT"
+                      and m.get("contentType") in ("IMAGE", "DOCUMENT", "AUDIO", "PTT", "VIDEO")):
+                    novidade = novidade or "arquivo novo de cliente acompanhado"
             if (m.get("sender") != "CONTACT" or m.get("contentType") not in ("IMAGE", "DOCUMENT")
                     or quando < COMECO or agora - quando > JANELA_MSG or m["id"] in _estado["avisados"]):
                 continue
@@ -94,6 +109,12 @@ def rodada(zaia, agora, contagem, d, acordar_financeiro=None):
             if tipo:
                 nome = (at.get("contact") or {}).get("name") or at.get("name") or ""
                 achados.append((m, tipo, nome, tel, perto))
+    if novidade and not d.DRY_RUN:
+        try:
+            import porteiro
+            porteiro.avisar_posreuniao(novidade, agora)
+        except Exception as erro:
+            _log(f"sinal da pós-reunião falhou: {type(erro).__name__}")
     if not achados:
         return
     grupo = (zaia.chamar("ler_grupo", grupoId=GRUPO_FINANCEIRO, limit=100) or {}).get("mensagens", [])
