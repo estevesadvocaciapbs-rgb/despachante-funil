@@ -1,7 +1,7 @@
 # Despachante do funil — Esteves Advocacia
 
-Programa pequeno, **sem IA**, que fica de plantão no GitHub das 7h às 21h e
-confere a Za.Ia **a cada 60 segundos**. Quando um lead triado aparece (tarefa ou
+Programa pequeno, **sem IA**, que fica de plantão no GitHub **24 horas por dia,
+todos os dias** (sábado, domingo e madrugada inclusive) e confere a Za.Ia **a cada 60 segundos**. Quando um lead triado aparece (tarefa ou
 resumo no grupo), ele confere a agenda do advogado no EasyJur e manda ao lead
 2 horários livres — o mais próximo de manhã e o mais próximo à tarde. Quando o
 lead escolhe, grava a reunião no EasyJur e avisa o grupo só para conhecimento.
@@ -61,6 +61,25 @@ pode entrar aqui**. O que garante isso:
   (opcional: `com Fernanda`) e o despachante grava pessoa, oportunidade e
   atendimento no EasyJur, agenda os lembretes e confirma no grupo, sem IA.
   O advogado padrão é o da última oferta feita ao lead.
+  Acrescente `presencial` (ex.: `GRAVAR Hana 19/10 13h presencial`) para gravar
+  como atendimento no escritório.
+
+## Atendimento presencial (desde 23/10/2026)
+
+A oferta continua sendo **por videochamada**. Se depois dela o lead disser que
+quer atendimento presencial ("presencial", "pessoalmente", "posso ir no
+escritório?"), a conversa não para:
+
+- A Annie já é orientada (Recepção, passo 1) a repetir os mesmos horários, agora
+  presencial. Se em 3 minutos ninguém repetir os horários, o despachante manda
+  "Claro, Fulano! O Dr. X pode te atender presencialmente, aqui no escritório,
+  nos mesmos horários. Tenho estes horários: …" (só se nenhum humano da equipe
+  tiver assumido a conversa).
+- Quando o lead escolhe, a reunião é gravada como presencial: no EasyJur, local
+  "Presencial — escritório"; confirmação, lembretes (8h e 1h antes) e aviso ao
+  advogado dizem "aqui no escritório" e **não levam link**. O evento do Google
+  Agenda do escritório continua sendo criado (título "Reunião PRESENCIAL …").
+- "Não precisa ser presencial" ou "pode ser online" volta para videochamada.
 
 ## Google Agenda pelo despachante (ponte na conta do escritório)
 

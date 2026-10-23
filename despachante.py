@@ -668,6 +668,94 @@ def escolha_do_lead(msgs, oferta, txt_oferta, agora):
     return None
 
 
+# Pedido da usuária em 23/10: a oferta continua sendo por videochamada, mas se o lead disser que quer
+# atendimento presencial a conversa não pode parar (houve caso em que a Annie e a automação pararam):
+# oferecem-se os MESMOS horários e a reunião é gravada como presencial, no escritório, sem link.
+MARCA_PRESENCIAL = "pode te atender presencialmente"
+RE_PRESENCIAL = re.compile(r"presencia|pessoalmente|\bir (?:ai|la|ate ai|ate la)\b|\b(?:no|ao|ate o|na sede do) escritorio\b")
+RE_ONLINE = re.compile(r"\bon ?line\b|video ?chamada|chamada de video|\bvideo\b|\bmeet\b")
+RE_NEGA_ANTES = re.compile(r"\bnao\b(?:\s+\w+){0,2}\s*$")
+ESPERA_PRESENCIAL = timedelta(minutes=3)
+_presencial_oferecido = set()
+
+
+def pede_presencial(texto):
+    """'presencial', 'online' ou None para uma mensagem do lead ("não precisa ser presencial" = online)."""
+    t = sem_acento(texto)
+    p = RE_PRESENCIAL.search(t)
+    if p and not RE_NEGA_ANTES.search(t[:p.start()]):
+        return "presencial"
+    o = RE_ONLINE.search(t)
+    if p or (o and not RE_NEGA_ANTES.search(t[:o.start()])):
+        return "online"
+    return None
+
+
+def modo_da_conversa(msgs, desde):
+    """'presencial' se, a partir de `desde`, o lead pediu presencial (e não voltou atrás) ou a reunião já
+    foi tratada como presencial pela Annie ou pelo despachante; senão 'online' (a regra da oferta)."""
+    modo = "online"
+    for m in msgs:
+        if m["createdAt"] < desde:
+            continue
+        c = m.get("content") or ""
+        if m.get("sender") == "CONTACT":
+            modo = pede_presencial(c) or modo
+        elif MARCA_PRESENCIAL in c or (MARCA_CONFIRMACAO in sem_acento(c) and "presencia" in sem_acento(c)):
+            modo = "presencial"
+    return modo
+
+
+def inicio_do_ciclo(ofertas):
+    """createdAt da primeira oferta do ciclo atual (a repetição presencial é uma nova oferta do mesmo ciclo)."""
+    ultima = ler_iso(ofertas[-1]["createdAt"])
+    return min(o["createdAt"] for o in ofertas if ultima - ler_iso(o["createdAt"]) <= timedelta(days=3))
+
+
+def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, contagem):
+    """O lead pediu atendimento presencial depois da oferta: repete os MESMOS horários, agora presencial.
+
+    Espera 3 minutos pela Annie. Devolve True enquanto cuida do pedido (esperando ou acabou de enviar),
+    para o aviso de "outro horário" não disparar por causa da mesma mensagem.
+    """
+    depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
+    pedidos = [m for m in depois if m.get("sender") == "CONTACT"
+               and pede_presencial(m.get("content") or "") == "presencial"]
+    if not pedidos or modo_da_conversa(depois, pedidos[-1]["createdAt"]) != "presencial":
+        return False
+    p = pedidos[-1]
+    resto = [m for m in depois if m["createdAt"] > p["createdAt"]]
+    if any(m.get("sender") != "CONTACT" and (MARCA_PRESENCIAL in (m.get("content") or "")
+                                             or RE_SLOT.search(m.get("content") or "")) for m in resto):
+        return False  # os horários já foram repetidos (pela Annie ou por aqui): segue o fluxo normal
+    if any(m.get("sender") != "CONTACT" and not (m.get("content") or "").startswith("*Annie*") for m in resto):
+        return False  # alguém da equipe assumiu a conversa
+    idade = agora - ler_iso(p["createdAt"])
+    if idade > timedelta(hours=24):
+        return False
+    chave = (lead["tel"], p["createdAt"])
+    if idade < ESPERA_PRESENCIAL or chave in _presencial_oferecido:
+        return True
+    slots = [data_do_texto(*s, agora) for s in dict.fromkeys(RE_SLOT.findall(txt_oferta))]
+    slots = [s for s in slots if s - agora >= timedelta(hours=1)]
+    if not slots:
+        return False  # os horários já passaram: fica com a equipe (aviso de outro horário)
+    _presencial_oferecido.add(chave)
+    adv = advogado_do_texto(txt_oferta)
+    nome = primeiro_nome(conv["contact"].get("name") or lead["nome"])
+    texto = (f"Claro, {nome}! {adv['nome']} {MARCA_PRESENCIAL}, aqui no escritório, nos mesmos horários. "
+             f"{MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots) + "\n\nQual fica melhor pra você?")
+    if DRY_RUN:
+        log("[simulação] repetiria os horários como presencial")
+        return True
+    quando = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:00.000Z")
+    zaia.chamar("agendar_mensagem", contatoId=conv["contact"]["id"], conversaId=conv["id"],
+                mensagem=texto, dataHora=quando, assinatura="ia", ativarIaAoResponder=True)
+    contagem["presencial_oferecido"] = contagem.get("presencial_oferecido", 0) + 1
+    log("lead pediu presencial e ninguém respondeu: horários repetidos como presencial")
+    return True
+
+
 def ja_confirmado_ao_lead(msgs, m_lead, inicio):
     alvo = (f"{inicio:%d}", f"{inicio:%m}", inicio.hour, f"{inicio:%M}")
     return any(x.get("sender") != "CONTACT" and x["createdAt"] > m_lead["createdAt"]
@@ -874,9 +962,12 @@ _conflitos_avisados = set()
 LEMBRETE_MANHA_H = 8  # lembrete no começo do dia do atendimento (além do de 1 hora antes)
 
 
-def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link=""):
+def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link="", modo="online"):
     """Agenda os lembretes ao cliente: 8h do dia (se a reunião for às 10h ou depois) e 1 hora antes."""
     quem = f"{adv['nome'][0].lower()}{adv['nome'][1:]}"
+    if modo == "presencial":
+        link = ""  # presencial: o link do evento do escritório não vai ao cliente
+    como = "aqui no escritório" if modo == "presencial" else "por videochamada"
     hora = f"{inicio:%H}h{inicio:%M}"
     pn = primeiro_nome(nome)
     um_h = inicio - timedelta(hours=1)
@@ -888,14 +979,15 @@ def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link=""):
                     dataHora=manha.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
                     assinatura="ia", ativarIaAoResponder=True, mensagem=(
                         f"Bom dia, {pn}! Passando para lembrar do seu atendimento de hoje, às {hora}, com {quem}, "
-                        "por videochamada." + (f" O link de acesso é: {link}" if link else "")
+                        f"{como}." + (f" O link de acesso é: {link}" if link else "")
                         + " Uma hora antes eu te mando outro lembrete. Até mais tarde!"))
         agendados.append("8h")
     if um_h - agora > timedelta(minutes=10):
         zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
                     dataHora=um_h.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
                     assinatura="ia", ativarIaAoResponder=True, mensagem=(
-                        f"Olá, {pn}! Passando para confirmar nosso atendimento de hoje às {hora} com {quem}. "
+                        f"Olá, {pn}! Passando para confirmar nosso atendimento de hoje às {hora} com {quem}"
+                        + (", aqui no escritório. " if modo == "presencial" else ". ")
                         + (f"O link da videochamada é: {link} — é só clicar nele na hora marcada. " if link else "")
                         + "Podemos confirmar sua presença?"))
         agendados.append("1h antes")
@@ -903,18 +995,24 @@ def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link=""):
 
 
 def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendentes, agora, contagem, chave,
-                   origem, marca=""):
+                   origem, marca="", modo="online"):
     """Grava pessoa, oportunidade e ATENDIMENTO no EasyJur, agenda os lembretes e avisa o grupo.
 
+    modo "presencial": local "Presencial — escritório", e nenhum link vai ao cliente (o evento do Google
+    continua sendo criado na agenda do escritório; a ponte sempre põe Meet, que fica só de reserva).
     Devolve True se gravou. Se o EasyJur recusar, avisa o grupo uma vez e não tenta de novo sozinho.
     """
+    presencial = modo == "presencial"
+    rotulo = "Presencial (escritório)" if presencial else "Online"
     fim = inicio + timedelta(minutes=DURACAO_MIN)
     google, link, aviso_google = None, "", "Google Agenda: ponte não configurada (o auditor cria o evento)"
     try:
         import agenda_google
         google = agenda_google.criar_reuniao(
-            f"Reunião {adv['curto'].replace(' Esteves', '').replace(' Mesquita', '')} — {nome}", nome, inicio, fim,
-            f"Lead: {nome} ({tel}). {resumo}", email_do_advogado(zaia, adv))
+            f"Reunião {'PRESENCIAL ' if presencial else ''}{adv['curto'].replace(' Esteves', '').replace(' Mesquita', '')}"
+            f" — {nome}", nome, inicio, fim,
+            ("ATENDIMENTO PRESENCIAL no escritório. " if presencial else "") + f"Lead: {nome} ({tel}). {resumo}",
+            email_do_advogado(zaia, adv))
         if google:
             link = google.get("link") or ""
             aviso_google = ("Google Agenda: evento criado" + (" · sala aberta (entra sem pedir permissão)"
@@ -939,8 +1037,10 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
         ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
                   cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
                   data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
-                  local=link or "Online", descricao=f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
-                  f"({origem}). " + (f"Link da videochamada: {link} . " if link else "") + resumo)
+                  local="Presencial — escritório" if presencial else (link or "Online"),
+                  descricao=("ATENDIMENTO PRESENCIAL no escritório. " if presencial else "")
+                  + f"Reunião com lead — {nome} ({tel}). Agendada automaticamente "
+                  f"({origem}). " + (f"Link da videochamada: {link} . " if link and not presencial else "") + resumo)
     except OrcamentoEasyJur:
         raise
     except Exception as erro:
@@ -957,8 +1057,15 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
     _gravadas.add(chave)
     contato_id, conv_id = conv["contact"]["id"], conv["id"]
     tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
-    agendados = [] if tem_pendente else lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link)
-    if link:  # confirmação com o link já, para o cliente guardar
+    agendados = [] if tem_pendente else lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link, modo)
+    if presencial:  # confirmação dizendo que é no escritório (a Annie pode ter falado em videochamada)
+        zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
+                    dataHora=(datetime.now(timezone.utc) + timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:00.000Z"),
+                    assinatura="ia", ativarIaAoResponder=True, mensagem=(
+                        f"Olá, {primeiro_nome(nome)}! Sua reunião com {adv['nome'][0].lower()}{adv['nome'][1:]} "
+                        f"está confirmada para {texto_slot(inicio)}, presencialmente, aqui no escritório. "
+                        "Eu te mando lembrete no dia. Até lá!"))
+    elif link:  # confirmação com o link já, para o cliente guardar
         zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
                     dataHora=(datetime.now(timezone.utc) + timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:00.000Z"),
                     assinatura="ia", ativarIaAoResponder=True, mensagem=(
@@ -967,7 +1074,7 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
                         "— é só clicar nele na hora marcada. Eu te mando lembrete no dia. Até lá!"))
     zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
         f"📅 *REUNIÃO AGENDADA — {nome} ({tel})*\n"
-        f"{adv['curto']} · {NOME_AREA.get(area, 'área a confirmar')} · {texto_slot(inicio)} · Online · "
+        f"{adv['curto']} · {NOME_AREA.get(area, 'área a confirmar')} · {texto_slot(inicio)} · {rotulo} · "
         "já está na agenda do EasyJur\n"
         f"*Caso:* {resumo}\n"
         f"Lembretes ao cliente: {', '.join(agendados) if agendados else 'já havia mensagem agendada'} · {aviso_google}\n"
@@ -975,8 +1082,9 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
     try:  # o advogado responsável recebe também no privado, com o link
         zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(
             f"📅 *REUNIÃO AGENDADA COM VOCÊ — {nome} ({tel})*\n"
-            f"{texto_slot(inicio)} · Online · {NOME_AREA.get(area, 'área a confirmar')}\n"
-            f"*Caso:* {resumo}\n" + (f"🔗 Link: {link}" if link else "🔗 Link: sai no Google Agenda em seguida")))
+            f"{texto_slot(inicio)} · {rotulo} · {NOME_AREA.get(area, 'área a confirmar')}\n"
+            f"*Caso:* {resumo}\n" + ("📍 O cliente vem ao escritório (sem link)" if presencial
+                                     else f"🔗 Link: {link}" if link else "🔗 Link: sai no Google Agenda em seguida")))
     except Exception as erro:
         log(f"aviso ao advogado no privado falhou: {type(erro).__name__}")
     contagem["reunioes"] += 1
@@ -1080,9 +1188,12 @@ def gravar_pelo_grupo(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, 
         if DRY_RUN:
             log("[simulação] GRAVAR pelo grupo")
             continue
+        modo = ("presencial" if re.search(r"presencia", sem_acento(resto))
+                else "online" if re.search(r"online|video", sem_acento(resto))
+                else modo_da_conversa(msgs, inicio_do_ciclo(ofertas)) if ofertas else "online")
         ok = gravar_reuniao(zaia, ej, conv, nome, lead["tel"], adv, inicio, area, resumo, pendentes, agora,
                             contagem, chave, "Horário combinado pela equipe (GRAVAR no grupo)",
-                            marca if g == GRUPO else "")
+                            marca if g == GRUPO else "", modo=modo)
         if ok and g != GRUPO:
             responder(f"✅ Gravado: {nome}, {texto_slot(inicio)} com {adv['curto']} (aviso no grupo Firma 2026).")
 
@@ -1145,11 +1256,15 @@ def avisar_presenca(zaia, conversas, leads, grupo17, agora, contagem):
         nome = (conv["contact"].get("name") or lead["nome"]).strip()
         if DRY_RUN:
             continue
+        presencial = "no escritório" in (lem.get("content") or "")
         zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(
             f"✅ *{nome} confirmou presença* no atendimento de hoje às {hora}.\n"
-            + (f"🔗 Link da videochamada: {link}" if link else "🔗 Link: veja o evento no Google Agenda do escritório")))
+            + ("📍 Atendimento presencial: o cliente vem ao escritório." if presencial
+               else f"🔗 Link da videochamada: {link}" if link
+               else "🔗 Link: veja o evento no Google Agenda do escritório")))
         zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId="claude-grupo-17", texto=(
-            f"✅ PRESENÇA CONFIRMADA — {nome} ({tel}) · {hora} · {adv['curto']} · link enviado no privado do advogado"))
+            f"✅ PRESENÇA CONFIRMADA — {nome} ({tel}) · {hora} · {adv['curto']} · "
+            + ("presencial, advogado avisado no privado" if presencial else "link enviado no privado do advogado")))
         contagem["presencas"] = contagem.get("presencas", 0) + 1
         log("presença confirmada — link enviado ao advogado")
 
@@ -1256,9 +1371,12 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 batem = [s for s in RE_SLOT.findall(m.get("content") or "") if s in ofertados]
                 conf.append((m, batem[0]))
         motivo = "A Annie confirmou"
+        modo = modo_da_conversa(msgs, inicio_do_ciclo(ofertas))
         if not conf:
             escolha = escolha_do_lead(msgs, ofertas[-1], txt, agora)
             if not escolha:
+                if oferecer_presencial(zaia, conv, lead, msgs, ofertas[-1], txt, agora, contagem):
+                    continue
                 avisar_outro_horario(zaia, conv, lead, msgs, ofertas[-1], ofertados, txt, grupo, contagem)
                 sugerir_gravar(zaia, conv, lead, msgs, ofertas[-1], ofertados, grupo, contagem)
                 continue
@@ -1269,8 +1387,10 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 nome_lead = primeiro_nome(conv["contact"].get("name") or lead["nome"])
                 zaia.chamar("enviar_mensagem", assinatura="ia", numero=lead["tel"], texto=(
                     f"Perfeito, {nome_lead}! Seu atendimento {MARCA_CONFIRMACAO} {texto_slot(inicio_esc)}, "
-                    f"por videochamada com {adv_esc['curto']}. Antes do horário você recebe aqui o link de acesso. "
-                    f"Qualquer imprevisto, é só avisar por aqui."))
+                    + (f"presencialmente, aqui no escritório, com {adv_esc['curto']}. "
+                       if modo == "presencial" else
+                       f"por videochamada com {adv_esc['curto']}. Antes do horário você recebe aqui o link de acesso. ")
+                    + "Qualquer imprevisto, é só avisar por aqui."))
                 contagem["confirmadas_pelo_despachante"] = contagem.get("confirmadas_pelo_despachante", 0) + 1
                 log("lead escolheu o horário e a Annie não confirmou: o despachante confirmou")
             conf = [({"content": txt}, slot)]  # a gravação segue o fluxo normal (advogado vem da oferta)
@@ -1322,7 +1442,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             continue
 
         if not gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendentes, agora,
-                              contagem, chave, motivo):
+                              contagem, chave, motivo, modo=modo):
             continue
 
 
