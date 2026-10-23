@@ -618,7 +618,8 @@ def pediu_outro_horario(texto, ofertados):
 # Annie para de responder. O lead escolheu "Amanhã às 10h30" e ninguém confirmou. Se o lead escolhe
 # claramente UM horário da oferta e a Annie não confirma em 5 minutos, o despachante confirma e grava.
 ESPERA_ESCOLHA = timedelta(minutes=5)
-RE_HORA_LEAD = re.compile(r"\b(\d{1,2})\s*(?:h|hs|hrs|horas|:)\s*(\d{2})?\b")
+# "9.30" também é hora (caso de 19/10: "Pode ser 9.30 presencial" ficou sem confirmação)
+RE_HORA_LEAD = re.compile(r"\b(\d{1,2})\s*(?:h|hs|hrs|horas|:|\.(?=\d{2}\b))\s*(\d{2})?\b")
 RE_ORDINAL = re.compile(r"^(?:a |o |opcao |horario |numero )?(1|2|primeir[ao]|segund[ao])(?: opcao| horario| opção)?$")
 
 

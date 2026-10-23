@@ -579,3 +579,19 @@ assert all("no escritório" in t for t in _txts) and d.MARCA_LEMBRETE_1H in _txt
 assert "Presencial (escritório)" in [a["texto"] for f, a in _zg.env if f == "enviar_mensagem_grupo"][0]
 assert "vem ao escritório" in [a["texto"] for f, a in _zg.env if f == "enviar_mensagem"][0]
 print("OK — reunião presencial gravada sem link e com lembretes do escritório")
+
+# caso de 19/10: "Tem atendimento presencial" -> Annie manda o endereço -> "Pode ser 9.30 presencial" e
+# ninguém confirma. O despachante confirma em 5 min, e a reunião é presencial.
+_ofA = ("*Annie*:\nOlá, Fulano! A Dra. Fernanda Mesquita analisou o seu caso e pode te atender por videochamada. "
+        "Tenho estes horários: 1) terça-feira, 20/10, às 09h30; 2) terça-feira, 20/10, às 14h30. Qual fica melhor pra você?")
+_slA = list(dict.fromkeys(d.RE_SLOT.findall(_ofA)))
+assert d.slot_escolhido("Pode ser 9.30 presencial", _slA) == ("20", "10", "09", "30")
+assert d.slot_escolhido("R$ 1.500", _slA) is None
+_mA = [_m("USER", _ofA, "2026-10-19T17:40:00.000Z"), _m("CONTACT", "Tem aténdimento presencial", "2026-10-19T17:41:00.000Z"),
+       _m("AGENT", "*Annie*:\nTemos sim! O endereço é ... Qual horário fica melhor?", "2026-10-19T17:42:00.000Z"),
+       _m("CONTACT", "Pode ser 9.30 presencial", "2026-10-19T17:44:00.000Z"),
+       _m("CONTACT", "vai ser cobrado algo pela consulta?", "2026-10-19T17:45:00.000Z")]
+_eA = d.escolha_do_lead(_mA, _mA[0], _ofA, datetime(2026, 10, 19, 17, 50, tzinfo=_tz2.utc))
+assert _eA and _eA[1] == ("20", "10", "09", "30")
+assert d.modo_da_conversa(_mA, d.inicio_do_ciclo([_mA[0]])) == "presencial"
+print("OK — caso de 19/10: '9.30 presencial' vira reunião presencial confirmada")
