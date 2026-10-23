@@ -173,7 +173,7 @@ def resumo_vigente(msgs, antes_de):
         return None, {}
     ultimo = ler_iso(resumos[-1]["createdAt"])
     partes = [m for m in resumos if ultimo - ler_iso(m["createdAt"]) < timedelta(minutes=30)]
-    if datetime.now(timezone.utc) - ultimo > timedelta(days=4):
+    if ler_iso(antes_de) - ultimo > timedelta(days=4):  # 4 dias antes do comando (igual a rascunhos_vigentes)
         return None, {}
     texto = "\n".join(sem_assinatura(m["content"]) for m in partes)
     return ultimo, itens_do_resumo(texto)

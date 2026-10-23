@@ -484,3 +484,27 @@ _conf = _m("USER", f"*Annie*:\nPerfeito, Júnior! Seu atendimento {d.MARCA_CONFI
                    "videochamada com Dr. Lucas.", "2026-10-21T13:00:00.000Z")
 assert not d.ja_confirmado_ao_lead(_msgs, _msgs[-1], _ini) and d.ja_confirmado_ao_lead(_msgs + [_conf], _msgs[-1], _ini)
 print("OK — lead escolheu e a Annie não confirmou: o despachante confirma uma vez")
+
+# --- 23/10: oferta em lista ("• quinta-feira, 22/10 às 10:30") ---
+_d1 = datetime(2026, 10, 22, 10, 30, tzinfo=d.BRT)
+_d2 = datetime(2026, 10, 22, 14, 0, tzinfo=d.BRT)
+_lista = d.texto_da_oferta("Júnior", d.LUCAS, [_d1, _d2])
+assert d.MARCA_OFERTA in _lista and "• quinta-feira, 22/10 às 10:30\n• quinta-feira, 22/10 às 14:00" in _lista, _lista
+assert _lista.endswith("\n\nQual fica melhor pra você?")
+_sl = list(dict.fromkeys(d.RE_SLOT.findall(_lista)))
+assert _sl == [("22", "10", "10", "30"), ("22", "10", "14", "00")], _sl
+# o lead escolhe pela hora, pelo turno ou pela ordem da lista
+for _t, _esp in [("10:30", _sl[0]), ("às 14h", _sl[1]), ("o primeiro", _sl[0]), ("de tarde", _sl[1]),
+                 ("22/10 às 14:00", _sl[1]), ("pode ser 16h?", None)]:
+    assert d.slot_escolhido(_t, _sl) == _esp, (_t, d.slot_escolhido(_t, _sl))
+# a Annie confirma copiando o horário da lista (com dois-pontos) ou no formato antigo
+_of = set(_sl)
+assert d.e_confirmacao("Perfeito, Júnior! Seu atendimento ficou marcado para quinta-feira, 22/10 às 14:00, por videochamada.", _of)
+assert d.e_confirmacao("Perfeito! Ficou marcado para quinta-feira, 22/10, às 14h00.", _of)
+assert not d.e_confirmacao("Qual fica melhor: 22/10 às 10:30 ou 22/10 às 14:00?", _of)
+_om = _m("USER", "*Annie*:\n" + _lista, "2026-10-21T12:53:02.508Z")
+_res = d.reservas_recentes([_om], datetime(2026, 10, 21, 10, 0, tzinfo=d.BRT))
+assert (d.LUCAS["id"], _d1) in _res and (d.LUCAS["id"], _d2) in _res, _res
+_cm = _m("USER", "*Annie*:\nPerfeito! Seu atendimento ficou marcado para quinta-feira, 22/10 às 10:30.", "2026-10-21T13:10:00.000Z")
+assert d.ja_confirmado_ao_lead([_om, _cm], _om, _d1) and not d.ja_confirmado_ao_lead([_om, _cm], _om, _d2)
+print("OK — oferta em lista: lida, escolhida e confirmada como a antiga")

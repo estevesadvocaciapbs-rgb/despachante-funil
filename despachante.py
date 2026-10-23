@@ -561,10 +561,22 @@ def texto_slot(s):
     return f"{DIAS_SEMANA[s.weekday()]}, {s:%d/%m}, às {s:%H}h{s:%M}"
 
 
-RE_SLOT = re.compile(r"(\d{2})/(\d{2}),? às (\d{1,2})h(\d{2})")
+def item_da_oferta(s):
+    """Uma linha da lista da oferta ao lead (pedido da usuária em 23/10: horários em lista, "10/10 às 14:30")."""
+    return f"• {DIAS_SEMANA[s.weekday()]}, {s:%d/%m} às {s:%H}:{s:%M}"
 
 
-RE_HORA_CITADA = re.compile(r"\b(\d{1,2})h(\d{2})\b")
+def texto_da_oferta(nome, adv, dois):
+    lista = "\n".join(item_da_oferta(s) for s in dois)
+    return (f"Olá, {nome}! {adv['nome']} analisou o seu caso e pode te atender por videochamada. "
+            f"{MARCA_OFERTA}:\n\n{lista}\n\nQual fica melhor pra você?")
+
+
+# Aceita o formato antigo ("às 14h30") e o da lista ("às 14:30"), e "as"/"ás" digitados com o acento trocado.
+RE_SLOT = re.compile(r"(\d{2})/(\d{2}),?\s+[àáa]s\s+(\d{1,2})[h:](\d{2})")
+
+
+RE_HORA_CITADA = re.compile(r"\b(\d{1,2})[h:](\d{2})\b")
 FRASES_DE_PERGUNTA = ("qual horario", "qual fica melhor", "qual prefere", "qual dos", "me diga", "ou as ", "ou às ")
 
 
@@ -657,9 +669,10 @@ def escolha_do_lead(msgs, oferta, txt_oferta, agora):
 
 
 def ja_confirmado_ao_lead(msgs, m_lead, inicio):
-    alvo = sem_acento(texto_slot(inicio))
+    alvo = (f"{inicio:%d}", f"{inicio:%m}", inicio.hour, f"{inicio:%M}")
     return any(x.get("sender") != "CONTACT" and x["createdAt"] > m_lead["createdAt"]
-               and MARCA_CONFIRMACAO in sem_acento(x.get("content")) and alvo in sem_acento(x.get("content"))
+               and MARCA_CONFIRMACAO in sem_acento(x.get("content"))
+               and alvo in [(d, m, int(h), mi) for d, m, h, mi in RE_SLOT.findall(x.get("content") or "")]
                for x in msgs)
 
 
@@ -834,9 +847,8 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
             continue
 
         dois = manha_e_tarde(slots)
-        lista = "; ".join(f"{i}) {texto_slot(s)}" for i, s in enumerate(dois, 1))
-        oferta = (f"Olá, {primeiro_nome(lead['nome'])}! {adv['nome']} analisou o seu caso e pode te "
-                  f"atender por videochamada. {MARCA_OFERTA}: {lista}. Qual fica melhor pra você?")
+        lista = "; ".join(texto_slot(s) for s in dois)  # forma corrida, só para o aviso no grupo
+        oferta = texto_da_oferta(primeiro_nome(lead["nome"]), adv, dois)
         if DRY_RUN:
             log(f"[simulação] ofereceria 2 horários ({adv['curto']})")
             print("    " + oferta)
