@@ -213,3 +213,11 @@ p._estado["aviso_fin"] = None
 p.avisar_pendencias(z, z.grupos["claude-grupo-18"], _dt(2026, 10, 24, 11, 5, tzinfo=timezone.utc))  # sábado
 assert len(z.enviadas) == 1
 print("OK — aviso da manhã: aprovado sem 🧾 e rascunho parado, uma vez por dia útil")
+
+# 23/10: pedido de mensagem programada ao cliente, escrito do jeito natural, também acorda as rotinas
+import porteiro as _p
+for _t, _esp in [("Quero agendar uma mensagem para a Ana na quinta às 8h dizendo X", True),
+                 ("Programa uma mensagem pro João amanhã 9h", True), ("Preciso mandar msg pro Fernando segunda 10h", True),
+                 ("vi a mensagem dela agora", False), ("kkkk", False)]:
+    assert bool(_p.RE_PEDIDO_GRUPO.search(_p.norm(_t))) == _esp, _t
+print("OK — pedido de mensagem programada no grupo acorda as rotinas")

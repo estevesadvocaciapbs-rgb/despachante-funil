@@ -174,6 +174,7 @@ nenhum dado). As rotinas do Claude "Secretário geral" e "Respostas pelo grupo"
 leem esse arquivo no primeiro passo e encerram na hora se não houver pedido
 novo; assim a rodada vazia quase não gasta. Em grupo, só conta mensagem de
 advogado dirigida ao sistema (verbo de ordem, código ou menção ao assistente).
+Pedido de mensagem programada ao cliente ("quero agendar uma mensagem para…") também conta.
 Teste manual: Actions › "Gravar sinal para o Claude (teste manual)" › Run workflow.
 
 Grupo "Financeiro Escritório" (claude-grupo-18, desde 20/10/2026): qualquer mensagem

@@ -52,6 +52,8 @@ RE_ASSINATURA = re.compile(r"^\s*\*[^*\n]{1,40}\*\s*:[ \t]*\n?")
 # Em grupo, só vale como pedido o que fala com o sistema (mesma regra do Secretário geral).
 RE_PEDIDO_GRUPO = re.compile(
     r"\b(ok|editar|nao)\s*[rsef]\s*\d|\b(assistente|automacao|annie|claude|ia|escritorio)\b|"
+    # mensagem programada ao cliente em qualquer ponto da frase ("Quero agendar uma mensagem para a Ana...")
+    r"\b(agend|program|envi|mand)\w*\s+(uma\s+|a\s+)?(mensagem|msg)\b|"
     # verbo de ordem no começo da mensagem, de uma linha ou logo depois de um cumprimento ("Bom dia, insira...")
     r"(?:^|[\n.!?,;:]\s*)(agende|agenda|agendar|marque|marca|marcar|remarque|remarca|cancele|cancela|crie|cria|"
     r"criar|anote|anota|bloqueie|desbloqueie|encerre|encerra|lembre|coloque|coloca|ponha|poe|bote|bota|confira|"
