@@ -45,7 +45,8 @@ DANIELLE = {"id": 344269, "nome": "A Dra. Danielle Esteves", "curto": "Dra. Dani
                         "15:30", "16:00", "16:30", "17:00"]}
 FERNANDA = {"id": 378457, "nome": "A Dra. Fernanda Mesquita", "curto": "Dra. Fernanda Mesquita",
             "tel": "5594991742534", "membro": "fernanda",
-            "inicios": ["09:30", "14:30"], "bloqueia_dia_audiencia": True}
+            "inicios": ["09:30", "10:30", "14:30", "15:30"],  # 10h30 e 15h30 incluídos a pedido da usuária (23/10)
+            "bloqueia_dia_audiencia": True}
 # so_online: o Dr. Lucas só atende por videochamada; pedido presencial passa para a Dra. Danielle (usuária, 23/10)
 LUCAS = {"id": 344268, "nome": "O Dr. Lucas", "curto": "Dr. Lucas", "tel": "5524992432455", "membro": "lucas",
          "so_online": True,
@@ -1812,6 +1813,44 @@ def _telefone_por_pessoa(ej, zaia, item):
     return None
 
 
+AVALIACAO_LINK = "https://g.page/r/CbDL-iHVUfu-EB0/review"
+AVALIACAO_DESDE = "2026-10-23"  # só atendimentos concluídos a partir da entrada no ar
+AVALIACAO_HORAS = range(8, 20)
+_avaliados = set()
+
+
+def texto_avaliacao(nome, adv):
+    quem = f"{adv['nome'][0].lower()}{adv['nome'][1:]}"
+    pn = primeiro_nome(nome)
+    return (f"Oi{', ' + pn if pn else ''}! Obrigada pela conversa com {quem}. 💙\n\n"
+            "Se puder, tire um minutinho para avaliar nosso trabalho no Google. A sua opinião ajuda outras pessoas "
+            f"a encontrarem o escritório:\n{AVALIACAO_LINK}\n\n"
+            "E para acompanhar conteúdos sobre os seus direitos, siga a Dra. Danielle Esteves no Instagram e no "
+            "TikTok (@dra.danielleesteves) e no YouTube (Dra Danielle Esteves).")
+
+
+def enviar_avaliacao(zaia, conv, msgs, item, adv, tel, agora, contagem):
+    """Atendimento concluído no EasyJur → o cliente recebe uma vez o pedido de avaliação no Google
+    (pedido da usuária em 23/10). Devolve True quando a conversa pode seguir para o encerramento."""
+    if item["id"] in _avaliados or str(item.get("data_conclusao") or item.get("data") or "") < AVALIACAO_DESDE:
+        return True
+    inicio = datetime.fromisoformat(f"{item['data']}T00:00").replace(tzinfo=BRT)
+    if any("g.page/r/CbDL-iHVUfu-EB0" in (m.get("content") or "") and ler_iso(m["createdAt"]) >= inicio for m in msgs):
+        _avaliados.add(item["id"])
+        return True
+    if agora.astimezone(BRT).hour not in AVALIACAO_HORAS:
+        return False  # fora do horário: manda na próxima volta e só então encerra
+    nome = (conv.get("contact") or {}).get("name") or item.get("nome_cliente") or ""
+    contagem["avaliacoes"] = contagem.get("avaliacoes", 0) + 1
+    if DRY_RUN:
+        log("[simulação] mandaria o pedido de avaliação no Google")
+        return False
+    zaia.chamar("enviar_mensagem", assinatura="ia", numero=tel, texto=texto_avaliacao(nome, adv))
+    _avaliados.add(item["id"])
+    log("atendimento concluído — pedido de avaliação no Google enviado")
+    return True
+
+
 def encerrar_concluidos(zaia, easyjur_fn, agora, contagem):
     if _concluidos["ultima"] and agora - _concluidos["ultima"] < CONCLUIDOS_A_CADA:
         return
@@ -1831,14 +1870,26 @@ def encerrar_concluidos(zaia, easyjur_fn, agora, contagem):
                 _concluidos["feitos"].add(item["id"])
                 continue
             conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=tel) or {}).get("conversa")
-            if not conv or conv.get("status") == "CLOSED":
+            if not conv:
                 _concluidos["feitos"].add(item["id"])
                 continue
             fim = datetime.fromisoformat(f"{item['data']}T{(item.get('hora_fim') or '23:59')[:5]}").replace(tzinfo=BRT)
             msgs = sorted(zaia.chamar("ler_conversa", conversaId=conv["id"]).get("messages", []),
                           key=lambda m: m["createdAt"])
             if msgs and msgs[-1].get("sender") == "CONTACT" and ler_iso(msgs[-1]["createdAt"]) > fim:
-                continue  # cliente escreveu depois da reunião e espera resposta: fica aberta
+                continue  # cliente escreveu depois da reunião e espera resposta: fica aberta (avaliação depois)
+            dono = next((a for a in ADVOGADOS if a["id"] == item.get("id_advogado")), adv)
+            try:
+                if not enviar_avaliacao(zaia, conv, msgs, item, dono, tel, agora, contagem):
+                    continue
+            except Exception as erro:
+                log(f"pedido de avaliação falhou: {type(erro).__name__}")
+            if conv.get("status") == "CLOSED":
+                # a mensagem de avaliação reabre a conversa: fecha de novo
+                conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=tel) or {}).get("conversa") or conv
+                if conv.get("status") == "CLOSED":
+                    _concluidos["feitos"].add(item["id"])
+                    continue
             nome = conv.get("contact", {}).get("name") or item.get("nome_cliente") or ""
             contagem["encerradas"] += 1
             if DRY_RUN:
@@ -1885,6 +1936,17 @@ def main():
 
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0,
                 "retomadas": 0, "encerradas": 0}
+    try:  # resgate: cliente que não veio à reunião recebe novos horários de tempos em tempos (23/10)
+        import resgate
+        resgatados = resgate.rodada(
+            zaia, easyjur_fn, agenda_fn, conversas, datetime.now(timezone.utc), contagem, sys.modules[__name__],
+            pendentes, lambda: reservas_recentes([m for l in leads_conf for m in conversas.de(l["tel"])[1]], agora))
+        vistos = {l["tel"] for l in leads_conf}
+        leads_conf = leads_conf + [l for l in resgatados if l["tel"] not in vistos]
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
+    except Exception as erro:  # o resgate nunca pode derrubar a oferta
+        log(f"resgate falhou: {type(erro).__name__}: {erro}")
     try:
         ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo)
         confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
@@ -1903,6 +1965,13 @@ def main():
         _avisar_orcamento(zaia, erro)
     except Exception as erro:
         log(f"GRAVAR pelo grupo falhou: {type(erro).__name__}: {erro}")
+    try:  # comprovante de pagamento enviado pelo cliente: aviso no grupo do financeiro + rotina financeira acordada
+        import comprovantes
+        import porteiro
+        comprovantes.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__],
+                            None if DRY_RUN else porteiro.avisar_financeiro)
+    except Exception as erro:
+        log(f"comprovantes falhou: {type(erro).__name__}: {erro}")
     try:
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta

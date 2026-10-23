@@ -131,6 +131,37 @@ def ddmm(d):
     return f"{d:%d/%m}"
 
 
+RE_DATA = re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b")
+
+
+def datas_do_prazo(txt, hoje):
+    """(fatal, interno) do comando PRAZO. O advogado decide as duas datas:
+    'PRAZO 2 fatal 29/10 interno 27/10', 'PRAZO 2 29/10 27/10' (a maior é a fatal) ou só 'PRAZO 2 29/10'
+    (interno = None: o padrão de 2 dias úteis antes é aplicado por quem chama)."""
+    achadas = []
+    for m in RE_DATA.finditer(txt):
+        d = data_br(m.group(0), hoje)
+        if d:
+            antes = norm(txt[max(0, m.start() - 14):m.start()])
+            rotulo = ("interno" if re.search(r"\bint(erno|erna|\.)?\s*:?\s*$", antes) else
+                      "fatal" if re.search(r"\bfatal\s*:?\s*$", antes) else None)
+            achadas.append((rotulo, d))
+    if not achadas:
+        return None, None
+    fatal = next((d for r, d in achadas if r == "fatal"), None)
+    interno = next((d for r, d in achadas if r == "interno"), None)
+    soltas = [d for r, d in achadas if r is None]
+    if fatal is None and interno is None and len(soltas) >= 2:
+        return max(soltas[:2]), min(soltas[:2])
+    if fatal is None:
+        fatal = soltas[0] if soltas else None
+    elif interno is None and soltas:
+        interno = soltas[0]
+    if fatal is None:  # só "interno 27/10": sem data fatal não dá para criar o prazo
+        return None, None
+    return fatal, interno
+
+
 # ------------------------------------------------------------------ resumo matinal
 RE_ITEM = re.compile(r"^\s*\*?((?:[AM])?\d{1,3})\.\s*\*?\s*(.*)$")
 RE_REF = re.compile(r"🔖\s*([PAE])-([0-9A-Za-z.,\- ]+)")
@@ -303,7 +334,8 @@ class Execucao:
         """Como responder certo, com os números que existem no resumo (mostrado quando algo dá errado)."""
         n = (nums + ["1"])[0]
         return {"LIDA": f"LIDA {' '.join(nums[:2]) or '1'}", "MANTER": f"MANTER {n}",
-                "PRAZO": f"PRAZO {n} {ddmm(self.hoje + timedelta(days=7))} contestar",
+                "PRAZO": f"PRAZO {n} fatal {ddmm(self.hoje + timedelta(days=7))} interno "
+                         f"{ddmm(self.hoje + timedelta(days=5))} contestar",
                 "TAREFA": f"TAREFA {n} {ddmm(self.hoje + timedelta(days=1))} o que fazer",
                 "CLIENTE": f"CLIENTE {n}"}.get(self.cmd, f"LIDA {n}")
 
@@ -337,13 +369,25 @@ class Execucao:
                 for c in copias:
                     if c.get("id") != p.get("id"):
                         self.ej.chamar("atualizar_leitura_publicacao", publicacao_id=int(c["id"]), lida=True)
-            self.linhas.append(f"✅ Lida: {rotulo}")
+            # confere no EasyJur se ficou marcada (pedido da usuária, 23/10: o LIDA precisa refletir na plataforma)
+            depois = ((self.ej.chamar("list_publicacoes", codPublicacao=ref, page_size=5) or {}).get("data") or [{}])[0]
+            if depois.get("lida") or depois.get("status") == "C":
+                self.linhas.append(f"✅ Lida: {rotulo} (marcada como lida no EasyJur)")
+            else:
+                self.linhas.append(f"⚠️ {rotulo}: mandei marcar como lida, mas o EasyJur ainda mostra pendente. "
+                                   f"Marque pela tela de Publicações.")
         elif tipo == "A":
-            for i in re.findall(r"\d+", ref):
-                self.ej.chamar("update_andamento", andamento_id=int(i), body={"status": "Lido"})
-            self.linhas.append(f"✅ Lida: {rotulo}")
+            ids = [int(i) for i in re.findall(r"\d+", ref)]
+            for i in ids:
+                self.ej.chamar("update_andamento", andamento_id=i, body={"status": "Lido"})
+            a = (self.ej.chamar("get_andamento", andamento_id=ids[0]) or {}).get("data") or {} if ids else {}
+            if str(a.get("status") or "").lower() in ("lido", "c") or a.get("data_leitura"):
+                self.linhas.append(f"✅ Lida: {rotulo} (marcado como lido no EasyJur)")
+            else:
+                self.linhas.append(f"⚠️ {rotulo}: mandei marcar como lido, mas o EasyJur ainda mostra pendente. "
+                                   f"Marque pela tela de Andamentos.")
         else:
-            self.linhas.append(f"✅ Ciente: {rotulo} (só no PJe)")
+            self.linhas.append(f"✅ Ciente: {rotulo} (aviso só do PJe: não existe no EasyJur para marcar)")
 
     def processo_do_item(self, it):
         tipo, ref = it["ref"]
@@ -378,18 +422,25 @@ class Execucao:
         m = re.match(r"^\s*\w+\s+([AaMm]?\d{1,3})[\s,]+(.*)$", linha)
         num, resto = num_item(m.group(1)), m.group(2)
         it = self.item(num)
-        fatal = data_br(resto, self.hoje)
+        fatal, interno_escolhido = datas_do_prazo(resto, self.hoje) if cmd == "PRAZO" else (data_br(resto, self.hoje), None)
         if not it:
             return
         if not fatal:
-            self.linhas.append(f"❓ Não entendi a data: {linha.strip()[:60]}. Exemplo: {cmd} 2 13/10")
+            self.linhas.append(f"❓ Não entendi a data: {linha.strip()[:60]}. Exemplo: {self.exemplo([num])}")
             return
-        texto = re.sub(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", "", resto).strip(" ,.-")
+        if interno_escolhido and interno_escolhido > fatal:
+            self.linhas.append(f"❓ A data interna ({ddmm(interno_escolhido)}) ficou depois da fatal ({ddmm(fatal)}). "
+                               f"Exemplo: PRAZO {num} fatal {ddmm(fatal)} interno {ddmm(fatal - timedelta(days=2))}")
+            return
+        texto = re.sub(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", "", resto)
+        texto = re.sub(r"(?i)\b(fatal|interno|interna|int\.?)\b\s*:?", "", texto)
+        texto = re.sub(r"\s+", " ", texto).strip(" ,.-")
         proc_id, pub = self.processo_do_item(it)
         tipo, ref = it["ref"]
         args = {"id_advogado": self.adv["id"], "data_fim": fatal.isoformat(), "processo": proc_id}
         if cmd == "PRAZO":
-            interno = dias_uteis_antes(self.ej, fatal, 2, self.hoje)
+            # o advogado escolhe a data interna; sem ela, 2 dias úteis antes da fatal (pedido da usuária, 23/10)
+            interno = interno_escolhido or dias_uteis_antes(self.ej, fatal, 2, self.hoje)
             args.update(tipo="PRAZO", id_advogado2=LUCAS_CONTROLADORIA, data=interno.isoformat(),
                         descricao=(texto or f"Prazo — item {num} ({it['processo'] or ref})") + " (criado pelo WhatsApp)")
             if tipo == "P":
@@ -403,9 +454,13 @@ class Execucao:
         aviso = "" if proc_id else " ⚠️ sem vínculo com processo (não achei no EasyJur)"
         if cmd == "PRAZO":
             self.marcar_lida(num, it)
-            self.linhas.pop()  # a linha "Lida" fica implícita no prazo
+            if self.linhas and self.linhas[-1].startswith("✅"):
+                self.linhas.pop()  # a linha "Lida" fica implícita no prazo (o ⚠️ de leitura não marcada fica)
+            dica = ("" if interno_escolhido else
+                    f"\n_Data interna padrão (2 dias úteis antes). Para escolher outra: PRAZO {num} fatal "
+                    f"{ddmm(fatal)} interno DD/MM_")
             self.linhas.append(f"✅ Prazo criado: item {num} — {it['processo'] or ref} — fatal {ddmm(fatal)}, "
-                               f"interno {ddmm(interno)}{aviso} (id {novo})")
+                               f"interno {ddmm(interno)}{aviso} (id {novo}){dica}")
         else:
             self.linhas.append(f"✅ Tarefa criada: item {num} — {ddmm(fatal)}{aviso} (id {novo})")
 

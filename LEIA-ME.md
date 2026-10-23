@@ -123,6 +123,32 @@ Sala aberta: o script tenta deixar a sala do Meet com acesso aberto (quem tem o
 link entra sem pedir permissão). O aviso no grupo diz se conseguiu. Contas
 Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
 
+## Depois da reunião: avaliação, resgate e comprovantes (desde 23/10/2026)
+
+- **Avaliação no Google** (`despachante.py`, junto com o encerramento dos
+  atendimentos concluídos, de hora em hora): atendimento marcado como Concluído no
+  EasyJur → o cliente recebe uma vez o agradecimento com o link de avaliação do
+  Google e as redes da Dra. Danielle (das 8h às 20h). Se o cliente estiver
+  esperando resposta, espera; depois a conversa é encerrada como antes.
+- **Resgate de quem não veio** (`resgate.py`, de hora em hora, 8h–19h, seg–sex):
+  reunião de lead (atendimento com telefone na descrição) que, 2 horas depois do
+  início, não foi concluída, não tem reunião nova, nem mensagem da equipe, nem
+  contrato, e o cliente não está esperando resposta → a Annie manda novos horários
+  do mesmo advogado (R1). Repete com R2 (2 dias úteis), R3 (7 dias), R4 (15) e R5
+  (30). A resposta do cliente segue o fluxo normal da oferta (escolha → gravação no
+  EasyJur). Para quando: atendimento concluído, reunião nova, alguém da equipe
+  escreve ao cliente, contrato/ZapSign, o cliente diz que não quer mais, ou depois
+  do R5. O advogado recebe 📵 no privado no R1 e um aviso final 15 dias depois do R5.
+  Só reuniões a partir de 23/10/2026.
+- **Comprovante de cliente** (`comprovantes.py`, a cada 5 min): imagem/PDF que a
+  Za.Ia descreve como Pix/transferência/depósito para o escritório (Dra. Danielle,
+  Dr. Lucas ou Dra. Fernanda como recebedor; ou sem recebedor legível quando o
+  cliente fala em pagamento) → aviso "🧾 COMPROVANTE DE CLIENTE" no grupo
+  Financeiro Escritório, sem CPF/agência/conta, e a rotina financeira é acordada.
+  A rotina confere o cadastro e as receitas do cliente no EasyJur, diz qual parcela
+  bate com o valor e publica o rascunho F; nada é lançado sem o OK de um advogado.
+  Comprovante de salário/compra (recebedor de fora) é ignorado.
+
 ## Secretaria sem IA (`secretaria.py`)
 
 Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA:
@@ -130,7 +156,11 @@ Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA
 - **Comandos do resumo matinal** (Dra. Fernanda e Dra. Danielle, no privado do
   escritório): `LIDA 1 3 A2`, `LIDA TODAS`, `MANTER 2`, `PRAZO 2 13/10 texto`,
   `TAREFA 4 05/10 texto`, `AGENDAR 10/10 14h assunto`, `MINHA AGENDA`,
-  `AGENDA Lucas`. PRAZO cria a data interna 2 dias úteis antes da fatal.
+  `AGENDA Lucas`. No PRAZO o advogado escolhe as duas datas: `PRAZO 2 fatal 29/10
+  interno 27/10 texto` (ou `PRAZO 2 29/10 27/10`: a maior é a fatal). Com uma data só,
+  ela é a fatal e a interna fica 2 dias úteis antes. Desde 23/10 o LIDA confere no
+  EasyJur se a publicação/andamento ficou marcado como lido e avisa ⚠️ se não ficou
+  (itens 🔖 E- são avisos só do PJe: não existem no EasyJur para marcar).
 - **Aprovações do relatório de pendências do Dr. Lucas**: `OK 2`, `OK 1 3`,
   `OK TODAS`, `EDITAR 2: texto`, `NÃO 2`.
 - **Aviso ao cliente** (os três advogados): `CLIENTE 1 A2` envia ao cliente o
@@ -234,7 +264,7 @@ que acontece nos contatos da Za.Ia; o auditor manda no máximo 4 informes por di
 ## Regras de agenda (iguais às das rotinas)
 
 - Dra. Danielle: seg–qui, 10h00–11h00 e 14h00–17h00 (meia em meia hora).
-- Dra. Fernanda: seg–qui, 09h30 e 14h30; dia com audiência fica bloqueado.
+- Dra. Fernanda: seg–qui, 09h30, 10h30, 14h30 e 15h30; dia com audiência fica bloqueado.
 - Dr. Lucas: seg–qui, 10h30–16h30.
 - Ninguém na sexta, fim de semana ou feriado do escritório. Mínimo de 3 horas
   de antecedência. Só compromissos reais ocupam; VIAGEM sem hora bloqueia o dia.

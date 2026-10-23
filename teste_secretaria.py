@@ -30,7 +30,13 @@ class FakeEJ:
         if f == "e_feriado":
             return {"data": {"e_feriado": a["data"] == "2026-10-28"}}
         if f == "list_publicacoes" and "codPublicacao" in a:
-            return {"data": [{"id": 501, "numProcesso": "0000137-11.2026.5.08.0114", "dataPublicacao": "2026-10-16"}]}
+            lida = any(c == "atualizar_leitura_publicacao" for c, _ in self.chamadas) and not getattr(self, "trava", False)
+            return {"data": [{"id": 501, "numProcesso": "0000137-11.2026.5.08.0114", "dataPublicacao": "2026-10-16",
+                              "lida": lida, "status": "C" if lida else "A"}]}
+        if f == "get_andamento":
+            lido = any(c == "update_andamento" for c, _ in self.chamadas)
+            return {"data": {"id": a["andamento_id"], "status": "C" if lido else "A",
+                             "data_leitura": "2026-10-19" if lido else None}}
         if f == "list_publicacoes":
             return {"data": [{"id": 501}, {"id": 502}]}
         if f == "get_publicacao":
@@ -110,7 +116,38 @@ assert ag["tipo"] == "PRAZO" and ag["data_fim"] == "2026-10-29" and ag["data"] =
 assert ag["id_advogado"] == 378457 and ag["id_advogado2"] == 344268 and ag["processo"] == 777
 assert ag["codigo_publicacao"] == "7925421099" and "contestar (criado pelo WhatsApp)" == ag["descricao"]
 assert "✅ Prazo criado: item 2" in z.enviadas[0][1] and "interno 26/10" in z.enviadas[0][1]
+assert "Para escolher outra" in z.enviadas[0][1]
 print("OK — PRAZO com data interna em dia útil")
+
+# ---- PRAZO: o advogado escolhe a data fatal e a interna (23/10)
+H = date(2026, 10, 19)
+assert s.datas_do_prazo("fatal 29/10 interno 22/10 contestar", H) == (date(2026, 10, 29), date(2026, 10, 22))
+assert s.datas_do_prazo("interna: 22/10, fatal: 29/10", H) == (date(2026, 10, 29), date(2026, 10, 22))
+assert s.datas_do_prazo("29/10 22/10 contestar", H) == (date(2026, 10, 29), date(2026, 10, 22))
+assert s.datas_do_prazo("22/10 29/10", H) == (date(2026, 10, 29), date(2026, 10, 22))
+assert s.datas_do_prazo("29/10 contestar", H) == (date(2026, 10, 29), None)
+assert s.datas_do_prazo("fatal 29/10 int 27/10", H) == (date(2026, 10, 29), date(2026, 10, 27))
+assert s.datas_do_prazo("interno 27/10", H) == (None, None)
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),
+                      msg(40, "CONTACT", "PRAZO 2 fatal 29/10 interno 21/10 contestar", "2026-10-19T13:00:00.000Z")])
+ag = [c[1] for c in ej.chamadas if c[0] == "create_agenda"][0]
+assert ag["data_fim"] == "2026-10-29" and ag["data"] == "2026-10-21" and ag["descricao"].startswith("contestar")
+assert "interno 21/10" in z.enviadas[0][1] and "Para escolher outra" not in z.enviadas[0][1]
+s._feitos.clear()
+z, ej = rodar_resumo([msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),
+                      msg(41, "CONTACT", "PRAZO 2 fatal 22/10 interno 29/10", "2026-10-19T13:00:00.000Z")])
+assert not [c for c in ej.chamadas if c[0] == "create_agenda"] and "depois da fatal" in z.enviadas[0][1]
+print("OK — PRAZO com data fatal e interna escolhidas pelo advogado")
+
+# ---- LIDA conferida no EasyJur: se continuar pendente, avisa
+s._feitos.clear()
+z, ej = FakeZ(), FakeEJ()
+ej.trava = True
+s.comandos_do_resumo(z, lambda: ej, FERN, [msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),
+                                           msg(42, "CONTACT", "LIDA 1", "2026-10-19T13:00:00.000Z")], AGORA, {})
+assert "⚠️" in z.enviadas[0][1] and "ainda mostra pendente" in z.enviadas[0][1]
+print("OK — LIDA conferida no EasyJur")
 
 # ---- AGENDAR: sem hora pergunta; com início e fim grava
 s._feitos.clear()

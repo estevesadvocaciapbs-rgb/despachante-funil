@@ -46,6 +46,7 @@ assert len(dois) == 2 and dois[0].hour < 12 <= dois[1].hour
 dois_f = d.manha_e_tarde(liv_f)
 print("2 horários Fernanda:", [d.texto_slot(s) for s in dois_f])
 assert [s.strftime("%H:%M") for s in dois_f] == ["09:30", "14:30"]
+assert {"10:30", "15:30"} <= {s.strftime("%H:%M") for s in liv_f}  # incluídos em 23/10
 
 seg_cedo = d.Agenda(FakeEJ([]), datetime(2026, 10, 5, 7, 0, tzinfo=d.BRT))  # segunda 7h
 dois_seg = d.manha_e_tarde(seg_cedo.livres(d.DANIELLE, set()))
