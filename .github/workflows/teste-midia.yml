@@ -1,0 +1,23 @@
+name: Teste de download de mídia da Za.Ia (só leitura)
+
+# Manual. Mostra só códigos HTTP, tipo e tamanho; nenhum conteúdo, link ou token vai ao log.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Testar
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
+        run: python teste_midia.py

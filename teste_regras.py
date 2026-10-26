@@ -149,6 +149,19 @@ assert not d.precisa_retomar(respondeu, AGR), "cliente já respondeu"
 ja = julia + [{"sender": "USER", "content": "*Annie*:\nJúlia, " + d.MARCA_RETOMADA + ", pode...?",
                "createdAt": "2026-10-03T00:18:00.000Z"}]
 assert not d.precisa_retomar(ja, AGR)
+# caso de 23/10: cliente já atendido pela Thalyta (lembrete de acordo); a Annie respondeu sem pergunta → não retoma
+cliente_antigo = [
+    {"sender": "USER", "senderName": "Thalyta Pereira Freitas", "content": "*Thalyta*:\n⚖️ LEMBRETE DE VENCIMENTO – ACORDO",
+     "createdAt": "2026-10-03T00:10:00.000Z"},
+    {"sender": "CONTACT", "content": "So segunda", "createdAt": "2026-10-03T00:14:57.000Z"},
+    {"sender": "AGENT", "content": "*Annie*:\nSem problemas, o vencimento é na segunda. Quando fizer o pagamento, é só me "
+     "encaminhar o comprovante por aqui, por favor.", "createdAt": "2026-10-03T00:15:48.003Z"}]
+assert not d.precisa_retomar(cliente_antigo, AGR)
+sem_thalyta = cliente_antigo[1:2] + [{"sender": "AGENT", "content": "*Annie*:\nCerto, anotado.",
+                                      "createdAt": "2026-10-03T00:15:48.003Z"}]
+assert d.precisa_retomar(sem_thalyta, AGR)  # sem equipe na conversa, a triagem travada continua sendo retomada
+assert not d.precisa_retomar(sem_thalyta[:1] + [{"sender": "AGENT", "senderName": "", "content": "*Thalyta:* Olá!",
+                                                 "createdAt": "2026-10-02T12:00:00.000Z"}] + sem_thalyta[1:], AGR)
 print("OK — retomada conferida")
 
 # ---- violência doméstica marcada "URGENTE" recebe horário (não é pulada)

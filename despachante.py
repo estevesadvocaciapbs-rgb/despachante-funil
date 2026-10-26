@@ -1711,7 +1711,26 @@ MARCA_RETOMADA = "para eu dar sequência ao seu atendimento"
 RETOMADA_MIN, RETOMADA_MAX = timedelta(seconds=100), timedelta(minutes=4)
 ENCERRAMENTOS = ("equipe vai", "vai te chamar", "vai chamar", "entrará em contato", "entraremos em contato",
                  "retorna pra marcar", "ficou marcado", "avaliação", "avaliacao", "g.page", "google",
-                 "até logo", "ate logo", "tenha um", "bom descanso", "disponha")
+                 "até logo", "ate logo", "tenha um", "bom descanso", "disponha",
+                 # pedido que não espera resposta agora (caso Antônio Móveis, 23/10: "é só me encaminhar o comprovante")
+                 "é só me", "e so me", "quando fizer", "quando realizar", "quando puder", "fico no aguardo",
+                 "aguardo o", "aguardo seu", "aguardo sua")
+# Conversa em que alguém da equipe (Thalyta, advogado) escreveu nos últimos 30 dias é de cliente já atendido:
+# a retomada é só para quem está na triagem com a Annie (caso Antônio Móveis, 23/10).
+RETOMADA_SEM_HUMANO_D = 30
+RE_ASSINATURA_HUMANA = re.compile(r"^\s*\*([^*:\n]{2,40})(?::\*|\*\s*:)")  # "*Thalyta*:" ou "*Thalyta:*"
+
+
+def escrita_por_humano(m):
+    """Mensagem da equipe: assinada por alguém que não é a Annie (*Thalyta*:, *Dra. Danielle Esteves*:...) ou
+    enviada pelo painel (USER) sem a assinatura da Annie."""
+    if m.get("sender") == "CONTACT":
+        return False
+    txt = m.get("content") or ""
+    assin = RE_ASSINATURA_HUMANA.match(txt)
+    if assin:
+        return "annie" not in sem_acento(assin.group(1))
+    return m.get("sender") == "USER" and (m.get("senderName") or "") not in ("", "Automação")
 
 
 def precisa_retomar(msgs, agora):
@@ -1733,6 +1752,9 @@ def precisa_retomar(msgs, agora):
     sa = sem_acento(texto)
     if "?" in texto or any(sem_acento(e) in sa for e in ENCERRAMENTOS):
         return None
+    if any(escrita_por_humano(m) and agora - ler_iso(m["createdAt"]) <= timedelta(days=RETOMADA_SEM_HUMANO_D)
+           for m in msgs):
+        return None  # cliente já atendido pela equipe: não é triagem travada
     recentes = [m for m in msgs if agora - ler_iso(m["createdAt"]) <= timedelta(minutes=30)]
     if any(MARCA_RETOMADA in (m.get("content") or "") for m in recentes):
         return None
