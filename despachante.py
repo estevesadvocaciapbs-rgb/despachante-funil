@@ -41,8 +41,8 @@ DRY_RUN = "--dry-run" in sys.argv
 
 DANIELLE = {"id": 344269, "nome": "A Dra. Danielle Esteves", "curto": "Dra. Danielle Esteves",
             "tel": "5594992048054", "membro": None,  # usa Outlook: não recebe convite do Google
-            "inicios": ["10:00", "10:30", "11:00", "14:00", "14:30", "15:00",
-                        "15:30", "16:00", "16:30", "17:00"]}
+            # grade definida pela usuária em 26/10 (caso Thiago): só estes inícios; nunca inventar outro horário
+            "inicios": ["10:30", "14:30", "15:30", "16:30"]}
 FERNANDA = {"id": 378457, "nome": "A Dra. Fernanda Mesquita", "curto": "Dra. Fernanda Mesquita",
             "tel": "5594991742534", "membro": "fernanda",
             "inicios": ["09:30", "10:30", "14:30", "15:30"],  # 10h30 e 15h30 incluídos a pedido da usuária (23/10)
@@ -938,22 +938,19 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
         agenda = agenda_fn()
         if pediu_fernanda(lead["texto"]) or area in ("familia", "vd", "criminal"):
             candidatos = [FERNANDA]
-        elif area == "trabalhista":
-            candidatos = [DANIELLE, FERNANDA]
+        elif area in ("trabalhista", "previdenciario"):
+            # regra da usuária (26/10): Dra. Danielle primeiro; sem horário livre dela na janela, o Dr. Lucas.
+            # Nunca se inventa horário fora da grade de quem atende.
+            candidatos = [DANIELLE, LUCAS]
         elif area == "civel":
             candidatos = [LUCAS]
         else:
-            candidatos = [DANIELLE, FERNANDA, LUCAS]
+            candidatos = [DANIELLE, LUCAS]
 
         adv, slots = None, []
         for c in candidatos:
             livres = agenda.livres(c, reservados)
-            if not livres:
-                continue
-            if area == "previdenciario" and not pediu_fernanda(lead["texto"]):
-                if not slots or livres[0] < slots[0]:
-                    adv, slots = c, livres
-            else:
+            if livres:
                 adv, slots = c, livres
                 break
 
@@ -1289,6 +1286,12 @@ def comandos_dos_advogados(zaia, conversas, easyjur_fn, agenda_fn, leads, penden
             _gravadas.add(chave)
             responder(f"ℹ️ {nome}: já existe atendimento de {adv['curto']} em {texto_slot(inicio)} no EasyJur. "
                       "Nada gravado de novo.")
+            continue
+        if ocupado(agenda_fn(), adv, inicio):
+            # caso Thiago (26/10): nunca gravar por cima de outro compromisso do advogado
+            _gravadas.add(chave)
+            responder(f"⚠️ GRAVAR {nome}: {adv['curto']} já tem compromisso em {texto_slot(inicio)} no EasyJur. "
+                      "Nada gravado. Escolha outro horário livre e mande o GRAVAR de novo.")
             continue
         area, _ = classificar(lead.get("texto", ""))
         resumo = resumo_do_caso(lead.get("texto", "")) or "ver a conversa no WhatsApp."
@@ -2014,6 +2017,13 @@ def main():
         _avisar_orcamento(zaia, erro)
     except Exception as erro:
         log(f"encerramento de concluídos falhou: {type(erro).__name__}: {erro}")
+    try:  # audiência designada em publicação → agenda do EasyJur (link do tribunal) + alerta ao advogado (26/10)
+        import audiencias
+        audiencias.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), contagem, sys.modules[__name__])
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
+    except Exception as erro:
+        log(f"audiências designadas falhou: {type(erro).__name__}: {erro}")
     if not DRY_RUN:
         lidas = {}
         try:  # comandos de formato fixo dos advogados (LIDA, PRAZO, AGENDAR, OK 2...), sem IA

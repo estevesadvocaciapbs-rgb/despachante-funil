@@ -152,6 +152,13 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   depois (última mensagem). Pergunta com mais de 3 dias sem follow-up não começa.
   Quando o lead responde, a Annie continua o roteiro. A retomada (Annie sem pergunta,
   2–4 min) não dispara mais em conversa de cliente já atendido pela equipe.
+- **Audiência designada em publicação** (`audiencias.py`, a cada 2 horas, 7h–19h, desde 26/10/2026):
+  lê as publicações dos últimos 3 dias da Dra. Danielle e da Dra. Fernanda; quando acha a designação de
+  audiência ("designo audiência...", "inclusão em pauta do dia...") com UMA data e hora futuras, cadastra
+  a AUDIENCIA na agenda do EasyJur do advogado, ligada ao processo e à publicação, com o link da sala do
+  TRIBUNAL no local (nunca Meet), e avisa o advogado no privado com ⚠️🗓️. Se a publicação já tem agenda
+  ligada, ou já existe audiência do processo no dia, não faz nada. Data ambígua ou ilegível: só avisa para
+  conferir. Não marca a publicação como lida.
 - **Sinal da pós-reunião** (`porteiro.avisar_posreuniao`, arquivo `posreuniao.json`
   no ramo "sinal", só hora e tipo): o despachante avisa quando há novidade —
   link do ZapSign na conversa, arquivo novo de cliente com reunião recente,
@@ -282,7 +289,11 @@ que acontece nos contatos da Za.Ia; o auditor manda no máximo 4 informes por di
 
 ## Regras de agenda (iguais às das rotinas)
 
-- Dra. Danielle: seg–qui, 10h00–11h00 e 14h00–17h00 (meia em meia hora).
+- Dra. Danielle: seg–qui, só 10h30, 14h30, 15h30 e 16h30 (definido pela usuária em 26/10).
+- Quem atende (26/10): Trabalhista e Previdenciário → Dra. Danielle; sem horário livre dela nos próximos
+  5 dias úteis → Dr. Lucas. Família, VD e Criminal (e quem pediu a Dra. Fernanda) → Dra. Fernanda.
+  Cível/Consumidor/Tributário → Dr. Lucas. Nunca se oferece horário fora da grade de quem atende.
+- GRAVAR (26/10): não grava se o advogado já tem compromisso no horário; responde ⚠️ e pede outro horário.
 - Dra. Fernanda: seg–qui, 09h30, 10h30, 14h30 e 15h30; dia com audiência fica bloqueado.
 - Dr. Lucas: seg–qui, 10h30–16h30.
 - Ninguém na sexta, fim de semana ou feriado do escritório. Mínimo de 3 horas

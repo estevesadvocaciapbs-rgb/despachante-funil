@@ -23,7 +23,7 @@ def item(adv, dia, tipo, h0="00:00", h1="00:00", status="A", dia_fim=None):
 
 
 itens = [
-    item(344269, "2026-10-05", "ATENDIMENTO", "10:00", "10:30"),   # ocupa seg 10h
+    item(344269, "2026-10-05", "ATENDIMENTO", "16:30", "17:00"),   # ocupa seg 16h30
     item(344269, "2026-10-05", "PRAZO"),                            # não ocupa
     item(344269, "2026-10-06", "VIAGEM"),                           # terça inteira bloqueada
     item(344269, "2026-10-07", "AUDIENCIA", "14:00", "15:00"),     # quarta 14h e 14h30 ocupados
@@ -34,7 +34,9 @@ ag = d.Agenda(FakeEJ(itens), AGORA)
 print("dias possíveis:", [x.isoformat() for x in ag.dias_possiveis()])
 liv_d = ag.livres(d.DANIELLE, set())
 assert all(s.strftime("%d/%m") != "06/10" for s in liv_d), "viagem deveria bloquear a terça"
-assert not any(s.strftime("%d/%m %H:%M") == "05/10 10:00" for s in liv_d), "10h de segunda ocupado"
+assert not any(s.strftime("%d/%m %H:%M") == "05/10 16:30" for s in liv_d), "16h30 de segunda ocupado"
+# grade da Dra. Danielle (26/10): só 10h30, 14h30, 15h30 e 16h30 — nunca outro horário
+assert {s.strftime("%H:%M") for s in liv_d} <= {"10:30", "14:30", "15:30", "16:30"}
 assert not any(s.strftime("%d/%m %H:%M") in ("07/10 14:00", "07/10 14:30") for s in liv_d)
 assert all(s.strftime("%d/%m") != "12/10" for s in liv_d), "feriado"
 liv_f = ag.livres(d.FERNANDA, set())
@@ -51,7 +53,7 @@ assert {"10:30", "15:30"} <= {s.strftime("%H:%M") for s in liv_f}  # incluídos 
 seg_cedo = d.Agenda(FakeEJ([]), datetime(2026, 10, 5, 7, 0, tzinfo=d.BRT))  # segunda 7h
 dois_seg = d.manha_e_tarde(seg_cedo.livres(d.DANIELLE, set()))
 print("lead de segunda 7h ->", [d.texto_slot(s) for s in dois_seg])
-assert [s.strftime("%d/%m %H:%M") for s in dois_seg] == ["06/10 10:00", "06/10 14:00"], \
+assert [s.strftime("%d/%m %H:%M") for s in dois_seg] == ["06/10 10:30", "06/10 14:30"], \
     "deve ser o próximo dia útil, nunca o mesmo dia"
 
 grupo = {"mensagens": [
@@ -808,3 +810,42 @@ _ag6 = [a for f, a in _ej6.env if f == "create_agenda"]
 assert _ag6 and _ag6[0]["hora_inicio"] == "19:00" and _ag6[0]["id_advogado"] == d.FERNANDA["id"], _ag6
 assert not [a for f, a in _z6.env if f == "enviar_mensagem_grupo" and "CONFLITO" in a["texto"]]
 print("OK — horário especial do advogado é gravado sem acusar conflito")
+
+# ---- 26/10 (caso Thiago): Dra. Danielle sem horário → Dr. Lucas (trabalhista e previdenciário); nunca outro horário
+class AgPor:
+    def __init__(s, por_adv): s.p = por_adv
+    def livres(s, adv, reservados): return list(s.p.get(adv["id"], []))
+    def itens(s, *a, **k): return []
+
+
+_hL = datetime(2026, 10, 27, 14, 0, tzinfo=d.BRT)
+for _area in ("Trabalhista — Rescisão Indireta", "Previdenciário — aposentadoria"):
+    _leadT = {"nome": "Teste Lead", "tel": "5594900000031", "quando": datetime(2026, 10, 26, 12, 0, tzinfo=_tz2.utc),
+              "texto": f"‼️NOVA OPORTUNIDADE‼️\nÁREA: {_area}\nResumo: caso de teste com salário atrasado, assédio grave e "
+                       "provas documentais; trabalhou 3 anos na empresa com carteira assinada."}
+    _zT = ZP()
+    _cvT = ConvL({"5594900000031": ({"id": "c31", "contact": {"id": "k31", "name": "Teste Lead"}}, [])})
+    d.ofertar(_zT, _cvT, lambda: AgPor({d.DANIELLE["id"]: [], d.LUCAS["id"]: [_hL]}), [_leadT],
+              datetime(2026, 10, 26, 12, 30, tzinfo=_tz2.utc), {"ofertas": 0, "pulados": 0, "sem_horario": 0},
+              {"mensagens": [{"sender": "CONTACT", "senderName": "Danielle Esteves", "content": "AGENDAR Teste",
+                              "createdAt": "2026-10-26T12:20:00.000Z"}]})
+    _of = [a["mensagem"] for f, a in _zT.env if f == "agendar_mensagem"]
+    assert _of and "Dr. Lucas" in _of[0] and "Fernanda" not in _of[0], (_area, _of)
+    _zT = ZP()
+    d.ofertar(_zT, _cvT, lambda: AgPor({d.DANIELLE["id"]: [_hL], d.LUCAS["id"]: [_hL]}), [_leadT],
+              datetime(2026, 10, 26, 12, 30, tzinfo=_tz2.utc), {"ofertas": 0, "pulados": 0, "sem_horario": 0},
+              {"mensagens": [{"sender": "CONTACT", "senderName": "Danielle Esteves", "content": "AGENDAR Teste",
+                              "createdAt": "2026-10-26T12:20:00.000Z"}]})
+    assert "Danielle" in [a["mensagem"] for f, a in _zT.env if f == "agendar_mensagem"][0]
+print("OK — Dra. Danielle sem horário: vai para o Dr. Lucas (trabalhista e previdenciário)")
+
+# ---- 26/10: GRAVAR não grava por cima de outro compromisso do advogado
+d._gravadas.clear(); d._falhas.clear()
+_ocup2 = [{"tipo": "PARTICULAR", "status": "A", "hora_inicio": "18:30:00", "hora_fim": "19:30:00",
+           "data": "2026-10-28", "data_fim": "2026-10-28"}]
+_zp9, _ej9 = ZPriv(), EJG()
+d.comandos_dos_advogados(_zp9, _cvA, lambda: _ej9, lambda: AgLivre([], _ocup2), [_leadA], [], _agora_p, {"reunioes": 0},
+                         {}, {d.DANIELLE["tel"]: [_m("CONTACT", "GRAVAR Júnior 28/10 19h", "2026-10-21T14:58:50.000Z")]})
+assert not [a for f, a in _ej9.env if f == "create_agenda"]
+assert "já tem compromisso" in [a["texto"] for f, a in _zp9.env if f == "enviar_mensagem"][-1]
+print("OK — GRAVAR recusa horário que já tem compromisso")

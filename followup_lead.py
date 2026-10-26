@@ -41,13 +41,12 @@ def e_annie(m):
 def texto_followup(n, nome, d):
     pn = d.primeiro_nome(nome or "")
     oi = f"Oi, {pn}!" if pn else "Oi!"
+    # só um convite para o lead voltar; quando ele responde, a Annie retoma o roteiro de onde parou (26/10)
     return {
-        1: f"{oi} {MARCAS[0]} 😊 Pra eu te ajudar com o seu caso, é só me responder a última pergunta, "
-           "por escrito ou por áudio. Pode ser?",
-        2: f"{oi} {MARCAS[1]} com o seu caso. Quando puder, me conta o que está acontecendo que eu te direciono "
-           "para o advogado certo. Pode ser?",
-        3: f"{oi} {MARCAS[2]}. Se ainda quiser orientação sobre o seu caso, é só me responder quando puder, "
-           "que eu continuo daqui. Combinado?",
+        1: f"{oi} {MARCAS[0]} 😊 Quando puder, é só me responder por aqui que eu continuo de onde paramos. Pode ser?",
+        2: f"{oi} {MARCAS[1]} com o seu caso. É só me responder por aqui que a gente continua de onde parou. Pode ser?",
+        3: f"{oi} {MARCAS[2]}. Se ainda quiser ajuda com o seu caso, é só me responder quando puder, que eu "
+           "continuo de onde paramos. Combinado?",
     }[n]
 
 
