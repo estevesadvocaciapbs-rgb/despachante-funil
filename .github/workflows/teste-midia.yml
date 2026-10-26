@@ -20,4 +20,7 @@ jobs:
         env:
           ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
           TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
-        run: python teste_midia.py
+        # o resultado (só códigos HTTP, tipo e tamanho) vai também para o resumo da execução
+        run: |
+          python teste_midia.py 2>&1 | grep -v "token com" | tee resultado.txt
+          { echo '```'; cat resultado.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
