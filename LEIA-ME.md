@@ -144,6 +144,14 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   do cliente), cliente que confirmou, equipe falando com o cliente, contrato,
   desistência, atendimento concluído ou reunião nova. O advogado recebe 📵 no
   privado no R1 e um aviso final 5 dias úteis depois do R4.
+- **Lead parado na triagem** (`followup_lead.py`, a cada 15 min, 8h–20h, desde
+  26/10/2026, caso Edson): conversa de lead novo (criada há até 14 dias, status
+  OPEN, sem ninguém da equipe escrevendo há 30 dias, sem oferta de horários) cuja
+  última mensagem é uma pergunta da Annie e o lead não respondeu → a Annie chama de
+  novo: F1 1 hora depois ("Ainda está por aí?"), F2 no dia seguinte e F3 3 dias
+  depois (última mensagem). Pergunta com mais de 3 dias sem follow-up não começa.
+  Quando o lead responde, a Annie continua o roteiro. A retomada (Annie sem pergunta,
+  2–4 min) não dispara mais em conversa de cliente já atendido pela equipe.
 - **Sinal da pós-reunião** (`porteiro.avisar_posreuniao`, arquivo `posreuniao.json`
   no ramo "sinal", só hora e tipo): o despachante avisa quando há novidade —
   link do ZapSign na conversa, arquivo novo de cliente com reunião recente,

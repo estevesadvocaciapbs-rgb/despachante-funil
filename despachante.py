@@ -2003,6 +2003,11 @@ def main():
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta
         log(f"retomada falhou: {type(erro).__name__}: {erro}")
+    try:  # lead que parou de responder na triagem: a Annie chama de novo (1 h, dia seguinte, 3 dias)
+        import followup_lead
+        followup_lead.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], pendentes)
+    except Exception as erro:
+        log(f"follow-up de lead falhou: {type(erro).__name__}: {erro}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
     except OrcamentoEasyJur as erro:
