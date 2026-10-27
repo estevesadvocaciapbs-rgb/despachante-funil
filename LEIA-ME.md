@@ -159,7 +159,7 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   mandou um link na conversa, só copia para o EasyJur. Sem telefone do cliente: 📵 no grupo, uma vez.
 - **Lead novo tratado no roteiro de cliente** (27/10, caso Vera): tarefa com "Departamento: suporte/recepcao"
   sem "NOVA OPORTUNIDADE" vale como lead se o contato foi criado há até 7 dias, não tem etiqueta
-  Cliente/Finalizado, ninguém da equipe escreveu e o título diz a área → recebe oferta de horários normal.
+  Cliente (a etiqueta "Finalizado" que a Annie põe ao encerrar não barra), ninguém da equipe escreveu e o título diz a área → recebe oferta de horários normal.
 - **Audiência designada em publicação** (`audiencias.py`, a cada 2 horas, 7h–19h, desde 26/10/2026):
   lê as publicações dos últimos 3 dias da Dra. Danielle e da Dra. Fernanda; quando acha a designação de
   audiência ("designo audiência...", "inclusão em pauta do dia...") com UMA data e hora futuras, cadastra

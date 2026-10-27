@@ -102,6 +102,10 @@ d._contatos.clear()
 z = ZS("2026-10-27T11:52:12.000Z", [{"sender": "CONTACT", "content": "oi", "createdAt": "2026-10-27T11:52:00.000Z"}])
 novos = d.leads_de_suporte(z, d.Conversas(z), [TAREFA], agora, set())
 assert len(novos) == 1 and d.classificar(novos[0]["texto"]) == ("trabalhista", None)
+# a Annie encerrou o Suporte e pôs "Finalizado": continua sendo lead novo
+d._contatos.clear()
+zf = ZS("2026-10-27T11:52:12.000Z", z.msgs, etiquetas=["Finalizado"])
+assert len(d.leads_de_suporte(zf, d.Conversas(zf), [TAREFA], agora, set())) == 1
 for zz in (ZS("2026-06-01T10:00:00.000Z"), ZS("2026-10-27T11:52:12.000Z", etiquetas=["Cliente"]),
            ZS("2026-10-27T11:52:12.000Z", [{"sender": "USER", "senderName": "Thalyta Pereira Freitas",
                                            "content": "*Thalyta*:\nOi!", "createdAt": "2026-10-27T12:00:00.000Z"}])):

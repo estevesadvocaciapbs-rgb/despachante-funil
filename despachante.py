@@ -336,7 +336,7 @@ def leads_recentes(grupo, tarefas, agora, janela_h=JANELA_LEAD_H):
 
 # Lead novo que a Annie tratou num roteiro de cliente (caso Vera, 27/10): a tarefa veio sem "NOVA OPORTUNIDADE"
 # e com "Departamento: suporte", e o despachante pulava. Vale como lead se o contato é novo (criado há até 7 dias,
-# sem etiqueta Cliente/Finalizado), ninguém da equipe escreveu na conversa e o título da tarefa diz a área.
+# sem etiqueta Cliente), ninguém da equipe escreveu na conversa e o título da tarefa diz a área.
 CONTATO_NOVO_D = 7
 _contatos = {}
 
@@ -363,7 +363,8 @@ def leads_de_suporte(zaia, conversas, tarefas, agora, ja, janela_h=JANELA_LEAD_H
         c = _contatos[tel]
         if not c or agora - ler_iso(c["createdAt"]) > timedelta(days=CONTATO_NOVO_D):
             continue
-        if any(sem_acento(e.get("name") or "") in ("cliente", "finalizado") for e in c.get("labels") or []):
+        # "Finalizado" não barra: é a etiqueta que a Annie põe ao encerrar o roteiro de Suporte (caso Vera, 27/10)
+        if any(sem_acento(e.get("name") or "") == "cliente" for e in c.get("labels") or []):
             continue
         conv, msgs = conversas.de(tel)
         if not conv or any(escrita_por_humano(m) for m in msgs):
