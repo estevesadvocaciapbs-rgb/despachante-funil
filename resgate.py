@@ -1,7 +1,8 @@
 """Resgate de reunião que não aconteceu — sem IA (pedidos da usuária em 23/10/2026).
 
 Roda dentro do plantão do despachante. Uma vez por hora lista no EasyJur os ATENDIMENTOS de lead
-(os que têm o telefone do cliente na descrição) e, para cada cliente, olha a reunião mais recente.
+(os que têm o telefone do cliente na descrição e, desde 27/10, os gravados à mão pela equipe, cujo telefone
+vem do cadastro do cliente) e, para cada cliente, olha a reunião mais recente.
 Dois casos recebem novos horários do mesmo advogado:
 
 1. FALTOU SEM RESPONDER: no dia da reunião o cliente recebeu o lembrete/pedido de confirmação e não
@@ -41,6 +42,8 @@ MARCA = "para remarcar a sua conversa"    # está em todas as mensagens de resga
 AVISO_ADV = "📵 *CLIENTE NÃO VEIO À REUNIÃO"
 AVISO_FIM = "📵 *CLIENTE SEM RETORNO"
 RE_TEL = re.compile(r"\b55\d{10,11}\b")
+MANUAL_ANTES_D, MANUAL_DEPOIS_D = 25, 30   # reunião gravada à mão: só olha o cadastro nessa janela (cota do EasyJur)
+_tel_pessoa = {}                           # id do cliente no EasyJur -> telefone (1 get_pessoa por cliente)
 # lembretes do dia da reunião (despachante: "Passando para lembrar do seu atendimento de hoje" e
 # "Passando para confirmar nosso atendimento de hoje ... Podemos confirmar sua presença?")
 RE_LEMBRETE = re.compile(r"(lembrar|confirmar)[^.?!]{0,60}(atendimento|reuniao|conversa)[^.?!]{0,40}\bhoje\b|"
@@ -117,9 +120,27 @@ def texto_resgate(d, n, nome, adv, inicio, dois, motivo="faltou"):
     return f"{abre} {d.MARCA_OFERTA}:\n\n{lista}\n\n{fecha}"
 
 
+def telefone_do_cadastro(ej, cliente):
+    """Celular/telefone do cliente no EasyJur (reunião gravada à mão, sem telefone na descrição — caso Janilza)."""
+    if cliente not in _tel_pessoa:
+        p = (ej.chamar("get_pessoa", pessoa_id=cliente) or {}).get("data") or {}
+        tel = None
+        for campo in ("celular", "celular2", "telefone", "telefone2"):
+            dig = re.sub(r"\D", "", str(p.get(campo) or ""))
+            if len(dig) in (10, 11):
+                dig = "55" + dig
+            if len(dig) in (12, 13) and dig.startswith("55"):
+                tel = dig
+                break
+        _tel_pessoa[cliente] = tel
+    return _tel_pessoa[cliente]
+
+
 def reunioes_por_cliente(d, ej, agora):
-    """{telefone: [itens]} dos ATENDIMENTOS com telefone na descrição, dos últimos JANELA_D dias e futuros."""
+    """{telefone: [itens]} dos ATENDIMENTOS dos últimos JANELA_D dias e futuros: telefone da descrição ou, na
+    reunião gravada à mão (perto de hoje, não cancelada, com cliente vinculado), do cadastro do cliente."""
     hoje = agora.astimezone(d.BRT).date()
+    de, ate = (hoje - timedelta(days=MANUAL_ANTES_D)).isoformat(), (hoje + timedelta(days=MANUAL_DEPOIS_D)).isoformat()
     por_tel, pag = {}, 1
     while True:
         r = ej.chamar("list_agenda", tipo="ATENDIMENTO", data_interna_inicio=(hoje - timedelta(days=JANELA_D)).isoformat(),
@@ -128,6 +149,11 @@ def reunioes_por_cliente(d, ej, agora):
             achado = RE_TEL.search(it.get("descricao") or "")
             if achado:
                 por_tel.setdefault(achado.group(0), []).append(it)
+            elif (it.get("cliente") and it.get("status") != "S" and (it.get("hora_inicio") or "00:00") != "00:00"
+                  and de <= (it.get("data") or "") <= ate):
+                tel = telefone_do_cadastro(ej, it["cliente"])
+                if tel:
+                    por_tel.setdefault(tel, []).append(it)
         if pag >= (r.get("meta") or {}).get("total_pages", 1) or pag >= 5:
             return por_tel
         pag += 1

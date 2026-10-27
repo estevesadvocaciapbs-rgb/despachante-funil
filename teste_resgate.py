@@ -283,3 +283,28 @@ c._estado["ultima"] = None
 c.rodada(zs, agora_s + timedelta(minutes=6), {}, d)
 assert gravados and "contrato" in gravados[-1][1]
 print("OK — sinal da pós-reunião: contrato, arquivo e reunião concluída (sem dados de cliente)")
+
+# reunião gravada à mão (sem telefone na descrição): o telefone vem do cadastro do cliente (caso de 27/10)
+class EJCad(EJ):
+    def chamar(s, f, **a):
+        if f == "get_pessoa":
+            s.env.append((f, a))
+            return {"data": {"celular": "(94) 90000-0123"}}
+        return super().chamar(f, **a)
+
+
+manual = dict(item(), descricao="Relato do caso, sem telefone.", cliente=77)
+r._tel_pessoa.clear()
+r._estado.update(ultima=None, ativos={}, avisados=set())
+zm = Z({TEL: (CONV, antes)})
+ejm = EJCad([manual])
+r.rodada(zm, lambda: ejm, lambda: Ag(), Conv(zm), REUNIAO + timedelta(hours=2, minutes=5), {}, d)
+assert [a for f, a in zm.env if f == "agendar_mensagem"], "reunião gravada à mão não foi resgatada"
+# cancelada, sem cliente vinculado ou sem hora: nem consulta o cadastro
+for it in (dict(manual, status="S"), dict(manual, cliente=0), dict(manual, hora_inicio="00:00")):
+    r._tel_pessoa.clear()
+    ejm = EJCad([it])
+    assert r.reunioes_por_cliente(d, ejm, REUNIAO + timedelta(hours=2)) == {}
+    assert not [f for f, a in ejm.env if f == "get_pessoa"]
+print("OK — reunião gravada à mão também é resgatada (telefone do cadastro)")
+

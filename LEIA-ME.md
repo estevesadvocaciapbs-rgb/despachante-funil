@@ -131,7 +131,9 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   Google e as redes da Dra. Danielle (das 8h às 20h). Se o cliente estiver
   esperando resposta, espera; depois a conversa é encerrada como antes.
 - **Resgate de reunião que não aconteceu** (`resgate.py`, de hora em hora, 8h–19h,
-  seg–sex), para reunião de lead (atendimento com telefone na descrição) a partir
+  seg–sex), para reunião de lead (atendimento com telefone na descrição; desde 27/10
+  também a gravada à mão pela equipe, com o telefone tirado do cadastro do cliente
+  vinculado — só reuniões de 25 dias atrás a 30 dias à frente, não canceladas) a partir
   de 23/10/2026, em dois casos: (1) o cliente recebeu o lembrete/pedido de
   confirmação do dia e NÃO respondeu nada até 2 horas depois do horário → R1 2 horas
   depois; (2) o cliente avisou no dia que não vai poder → R1 ("Sem problema...")
