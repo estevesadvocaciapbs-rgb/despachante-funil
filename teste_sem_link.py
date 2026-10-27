@@ -65,6 +65,14 @@ ag = [k for f, k in z.env if f == "agendar_mensagem"]
 assert len(ag) == 2 and "meet.google.com/aaa" in ag[0]["mensagem"] and ag[0]["assinatura"] == "ia"
 assert any(k["numero"] == d.DANIELLE["tel"] and r.TITULO in k["texto"] for f, k in z.env if f == "enviar_mensagem")
 assert [k for f, k in z.env if f == "buscar_conversa_por_telefone"][0]["telefone"] == "5594990000001"
+# celular antigo no cadastro, sem o 9 (caso de 27/10): procura a conversa com o 9
+ej, z = rodar([item()], celular="(81) 9211-5499")
+assert [k for f, k in z.env if f == "buscar_conversa_por_telefone"][0]["telefone"] == "5581992115499"
+import telefones
+assert telefones.whatsapp("(94) 3346-1234") == "559433461234"      # fixo fica como está
+assert telefones.whatsapp("5594991204468") == "5594991204468"
+assert telefones.whatsapp("081 9211-5499") == "5581992115499"
+assert telefones.whatsapp("123") is None
 # já tem link, é presencial, está cancelada, começa já, não tem hora: nada
 for it in (item(local="https://meet.google.com/x"), item(local="Presencial — escritório"), item(status="S"),
            item(hora_inicio="09:30"), item(hora_inicio="00:00"), item(tipo="TAREFA")):

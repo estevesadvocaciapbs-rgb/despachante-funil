@@ -123,16 +123,8 @@ def texto_resgate(d, n, nome, adv, inicio, dois, motivo="faltou"):
 def telefone_do_cadastro(ej, cliente):
     """Celular/telefone do cliente no EasyJur (reunião gravada à mão, sem telefone na descrição — caso Janilza)."""
     if cliente not in _tel_pessoa:
-        p = (ej.chamar("get_pessoa", pessoa_id=cliente) or {}).get("data") or {}
-        tel = None
-        for campo in ("celular", "celular2", "telefone", "telefone2"):
-            dig = re.sub(r"\D", "", str(p.get(campo) or ""))
-            if len(dig) in (10, 11):
-                dig = "55" + dig
-            if len(dig) in (12, 13) and dig.startswith("55"):
-                tel = dig
-                break
-        _tel_pessoa[cliente] = tel
+        import telefones
+        _tel_pessoa[cliente] = telefones.do_cadastro((ej.chamar("get_pessoa", pessoa_id=cliente) or {}).get("data"))
     return _tel_pessoa[cliente]
 
 

@@ -16,6 +16,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 import secretaria
+import telefones
 
 BRT = timezone(timedelta(hours=-3))
 CICLO = 20                              # dias úteis entre dois retornos do mesmo cliente
@@ -95,13 +96,7 @@ def rascunho(nome, processos):
 
 def telefone(ej, id_cliente):
     p = (ej.chamar("get_pessoa", pessoa_id=int(id_cliente)) or {}).get("data") or {}
-    for campo in ("celular", "celular2", "telefone", "telefone2"):
-        dig = re.sub(r"\D", "", p.get(campo) or "")
-        if len(dig) in (10, 11):
-            dig = "55" + dig
-        if len(dig) in (12, 13):
-            return dig
-    return None
+    return telefones.do_cadastro(p)
 
 
 def teve_contato(zaia, tel, agora):

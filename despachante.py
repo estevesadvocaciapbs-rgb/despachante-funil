@@ -1860,13 +1860,10 @@ def telefone_do_atendimento(ej, zaia, item):
 
 def _telefone_por_pessoa(ej, zaia, item):
     if item.get("cliente"):
-        p = (ej.chamar("get_pessoa", pessoa_id=item["cliente"]) or {}).get("data") or {}
-        for campo in ("celular", "celular2", "telefone", "telefone2"):
-            dig = re.sub(r"\D", "", p.get(campo) or "")
-            if len(dig) in (10, 11):
-                dig = "55" + dig
-            if len(dig) in (12, 13):
-                return dig
+        import telefones  # celular antigo sem o 9 ganha o 9 (caso de 27/10)
+        tel = telefones.do_cadastro((ej.chamar("get_pessoa", pessoa_id=item["cliente"]) or {}).get("data"))
+        if tel:
+            return tel
     nome = (item.get("nome_cliente") or "").strip()
     if not nome:
         return None

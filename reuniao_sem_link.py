@@ -58,13 +58,10 @@ def telefone(item, zaia, ej, d):
     if achado:
         return achado.group(1)
     if item.get("cliente"):
-        p = (ej.chamar("get_pessoa", pessoa_id=item["cliente"]) or {}).get("data") or {}
-        for campo in ("celular", "celular2", "telefone", "telefone2"):
-            dig = re.sub(r"\D", "", str(p.get(campo) or ""))
-            if len(dig) in (10, 11):
-                return "55" + dig
-            if len(dig) in (12, 13) and dig.startswith("55"):
-                return dig
+        import telefones
+        tel = telefones.do_cadastro((ej.chamar("get_pessoa", pessoa_id=item["cliente"]) or {}).get("data"))
+        if tel:
+            return tel
     nome = (item.get("nome_cliente") or "").strip()
     if len(nome) >= 3:
         cs = (zaia.chamar("buscar_contatos", query=nome, limit=10) or {}).get("contatos", [])
