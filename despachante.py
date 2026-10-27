@@ -334,6 +334,46 @@ def leads_recentes(grupo, tarefas, agora, janela_h=JANELA_LEAD_H):
     return list(leads.values())
 
 
+# Lead novo que a Annie tratou num roteiro de cliente (caso Vera, 27/10): a tarefa veio sem "NOVA OPORTUNIDADE"
+# e com "Departamento: suporte", e o despachante pulava. Vale como lead se o contato é novo (criado há até 7 dias,
+# sem etiqueta Cliente/Finalizado), ninguém da equipe escreveu na conversa e o título da tarefa diz a área.
+CONTATO_NOVO_D = 7
+_contatos = {}
+
+
+def leads_de_suporte(zaia, conversas, tarefas, agora, ja, janela_h=JANELA_LEAD_H):
+    extras = []
+    for t in tarefas:
+        texto = f"{t.get('title', '')}\n{t.get('description', '')}"
+        dep = RE_DEPARTAMENTO.search(texto)
+        if not dep or dep.group(1) not in ("suporte", "recepcao") or eh_briefing(texto):
+            continue
+        achado = RE_CONTATO_TAREFA.search(texto) or RE_LEAD.search(texto)
+        if not achado:
+            continue
+        nome, tel, quando = achado.group(1).strip(), achado.group(2), ler_iso(t["createdAt"])
+        if tel in EQUIPE or tel in ja or agora - quando > timedelta(hours=janela_h):
+            continue
+        area, pular = classificar(t.get("title") or "")
+        if pular:
+            continue
+        if tel not in _contatos:
+            cs = (zaia.chamar("buscar_contatos", query=tel, limit=5) or {}).get("contatos", [])
+            _contatos[tel] = next((c for c in cs if (c.get("phone") or "") == tel), None)
+        c = _contatos[tel]
+        if not c or agora - ler_iso(c["createdAt"]) > timedelta(days=CONTATO_NOVO_D):
+            continue
+        if any(sem_acento(e.get("name") or "") in ("cliente", "finalizado") for e in c.get("labels") or []):
+            continue
+        conv, msgs = conversas.de(tel)
+        if not conv or any(escrita_por_humano(m) for m in msgs):
+            continue
+        ja.add(tel)
+        extras.append({"nome": nome, "tel": tel, "texto": f"ÁREA: {NOME_AREA[area]}\n{texto}", "quando": quando,
+                       "origem": "tarefa"})
+    return extras
+
+
 def classificar(texto):
     """Devolve (area, motivo_para_pular)."""
     sa_todo = sem_acento(texto)
@@ -1941,6 +1981,12 @@ def main():
     leads = leads_recentes(grupo, tarefas, agora)
     leads_conf = leads_recentes(grupo, tarefas, agora, janela_h=24 * JANELA_CONFIRMACAO_D)
     conversas = Conversas(zaia)
+    try:  # lead novo tratado pela Annie no roteiro de cliente (caso Vera, 27/10)
+        leads += leads_de_suporte(zaia, conversas, tarefas, agora, {l["tel"] for l in leads})
+        leads_conf += leads_de_suporte(zaia, conversas, tarefas, agora, {l["tel"] for l in leads_conf},
+                                       janela_h=24 * JANELA_CONFIRMACAO_D)
+    except Exception as erro:
+        log(f"leads do suporte falhou: {type(erro).__name__}: {erro}")
     log(f"leads triados nas últimas {JANELA_LEAD_H} h: {len(leads)}")
 
     cache = {}
@@ -2017,6 +2063,14 @@ def main():
         _avisar_orcamento(zaia, erro)
     except Exception as erro:
         log(f"encerramento de concluídos falhou: {type(erro).__name__}: {erro}")
+    try:  # reunião online gravada à mão no EasyJur sem link: cria o Meet e manda ao cliente (caso Janilza, 27/10)
+        import reuniao_sem_link
+        reuniao_sem_link.rodada(zaia, easyjur_fn, conversas, datetime.now(timezone.utc), contagem,
+                                sys.modules[__name__], pendentes)
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
+    except Exception as erro:
+        log(f"reunião sem link falhou: {type(erro).__name__}: {erro}")
     try:  # audiência designada em publicação → agenda do EasyJur (link do tribunal) + alerta ao advogado (26/10)
         import audiencias
         audiencias.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), contagem, sys.modules[__name__])

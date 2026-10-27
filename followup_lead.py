@@ -8,7 +8,7 @@ em que a última mensagem é uma PERGUNTA da Annie e o lead sumiu. Então a Anni
   F2 — no dia seguinte (20 horas depois do F1)
   F3 — 3 dias depois do F2 (avisa que é a última mensagem)
 
-Só manda das 8h às 19h59 (Belém), todos os dias. Quando o lead responde, a Annie continua o roteiro
+Funciona 24 horas, todos os dias (pedido da usuária em 27/10). Quando o lead responde, a Annie continua o roteiro
 (ativarIaAoResponder). Não manda: se a pergunta da Annie tem mais de 3 dias e ninguém chamou ainda (lead
 antigo), se o lead já recebeu oferta de horários (essa parte é da oferta/resgate), se há mensagem agendada
 para ele, ou depois do F3. Privacidade: o log não leva nome nem telefone.
@@ -24,7 +24,7 @@ ESPERA_F1 = timedelta(hours=1)
 ESPERA_F2 = timedelta(hours=20)
 ESPERA_F3 = timedelta(days=3)
 F1_ATE = timedelta(days=3)                # pergunta mais velha que isso sem follow-up: não começa agora
-HORAS = range(8, 20)
+HORAS = range(0, 24)  # 24 h (usuária, 27/10)
 MARCAS = ("Ainda está por aí?", "Passando para saber se você ainda precisa de ajuda",
           "Esta é a minha última mensagem por aqui")
 _estado = {"ultima": None}

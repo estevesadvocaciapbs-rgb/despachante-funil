@@ -144,7 +144,7 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   do cliente), cliente que confirmou, equipe falando com o cliente, contrato,
   desistência, atendimento concluído ou reunião nova. O advogado recebe 📵 no
   privado no R1 e um aviso final 5 dias úteis depois do R4.
-- **Lead parado na triagem** (`followup_lead.py`, a cada 15 min, 8h–20h, desde
+- **Lead parado na triagem** (`followup_lead.py`, a cada 15 min, 24 horas (desde 27/10), desde
   26/10/2026, caso Edson): conversa de lead novo (criada há até 14 dias, status
   OPEN, sem ninguém da equipe escrevendo há 30 dias, sem oferta de horários) cuja
   última mensagem é uma pergunta da Annie e o lead não respondeu → a Annie chama de
@@ -152,6 +152,14 @@ Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
   depois (última mensagem). Pergunta com mais de 3 dias sem follow-up não começa.
   Quando o lead responde, a Annie continua o roteiro. A retomada (Annie sem pergunta,
   2–4 min) não dispara mais em conversa de cliente já atendido pela equipe.
+- **Reunião online gravada à mão sem link** (`reuniao_sem_link.py`, a cada 30 min, desde 27/10/2026,
+  caso Janilza): ATENDIMENTO dos próximos 3 dias no EasyJur com local sem link e não presencial → cria o
+  evento com Meet na agenda do escritório, grava o link no local do EasyJur, manda o link ao cliente (7h–21h;
+  de noite fica agendado para as 7h) com os lembretes de sempre e avisa o advogado no privado. Se a equipe já
+  mandou um link na conversa, só copia para o EasyJur. Sem telefone do cliente: 📵 no grupo, uma vez.
+- **Lead novo tratado no roteiro de cliente** (27/10, caso Vera): tarefa com "Departamento: suporte/recepcao"
+  sem "NOVA OPORTUNIDADE" vale como lead se o contato foi criado há até 7 dias, não tem etiqueta
+  Cliente/Finalizado, ninguém da equipe escreveu e o título diz a área → recebe oferta de horários normal.
 - **Audiência designada em publicação** (`audiencias.py`, a cada 2 horas, 7h–19h, desde 26/10/2026):
   lê as publicações dos últimos 3 dias da Dra. Danielle e da Dra. Fernanda; quando acha a designação de
   audiência ("designo audiência...", "inclusão em pauta do dia...") com UMA data e hora futuras, cadastra

@@ -74,7 +74,7 @@ assert env[0]["ativarIaAoResponder"] is True and env[0]["assinatura"] == "ia"
 assert not [a for fn, a in z.env if fn == "ler_conversa" and a["conversaId"] == "v2"]  # conversa antiga nem é lida
 f._estado["ultima"] = None
 z = Z([at], {"v1": lead})
-f.rodada(z, datetime(2026, 10, 26, 23, 30, tzinfo=UTC), {}, d)  # 20h30 em Belém: não manda
-assert not [a for fn, a in z.env if fn == "agendar_mensagem"]
+f.rodada(z, datetime(2026, 10, 26, 23, 30, tzinfo=UTC), {}, d)  # 20h30 em Belém: manda também (24 h, 27/10)
+assert [a for fn, a in z.env if fn == "agendar_mensagem"]
 assert not d.precisa_retomar(lead + [f1], CHEGOU + timedelta(hours=1, minutes=4))  # o F1 tem pergunta: sem retomada
 print("OK — follow-up de lead parado na triagem (1 h, dia seguinte, 3 dias)")
