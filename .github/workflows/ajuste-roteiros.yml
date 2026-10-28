@@ -1,0 +1,36 @@
+name: Ajuste dos roteiros da Annie
+
+# Roda sozinho quando o script de ajuste muda (aprovação da usuária em 28/10) ou à mão.
+on:
+  push:
+    branches: [main]
+    paths: [ajuste_roteiros_2710.py]
+  workflow_dispatch:
+    inputs:
+      desfazer:
+        description: "Tirar os blocos de 28/10 dos roteiros"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  ajustar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ajustar roteiros
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
+        run: |
+          if [ "${{ inputs.desfazer }}" = "true" ]; then
+            python ajuste_roteiros_2710.py --desfazer
+          else
+            python ajuste_roteiros_2710.py
+          fi
