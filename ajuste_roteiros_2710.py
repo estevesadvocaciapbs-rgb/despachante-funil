@@ -7,11 +7,13 @@ B2) Lead novo nunca sai como contato de Suporte: Suporte.
 C) Exclui o passo vazio "Novo passo" do roteiro de Assédio.
 
 Cada bloco vai entre marcas próprias: rodar de novo não duplica, e "--desfazer" tira só o que foi posto aqui.
+Uma escrita a cada 2,5 s: a Za.Ia aceita 30 por minuto (a primeira rodada, de 28/10, parou nesse limite).
 O log não leva texto de roteiro nem dado de cliente (o repositório é público).
 """
 
 import os
 import sys
+import time
 
 import despachante as d
 
@@ -53,6 +55,7 @@ def main(desfazer=False):
             if p["id"] == PASSO_VAZIO:
                 if not desfazer and not (p.get("instrucao") or "").strip():
                     zaia.chamar("excluir_passo", passoId=p["id"])
+                    time.sleep(2.5)
                     print(f"{slug}: passo vazio excluído")
                 continue
             if not (p.get("instrucao") or "").strip() and not p.get("complementoUsuario"):
@@ -62,6 +65,7 @@ def main(desfazer=False):
             novo = limpo if desfazer else f"{INICIO}\n{bloco}\n{FIM}\n\n{limpo}".strip()
             if novo != atual:
                 zaia.chamar("editar_passo", passoId=p["id"], complemento=novo)
+                time.sleep(2.5)
                 feitos += 1
         print(f"{slug}: {feitos} passo(s) {'restaurado(s)' if desfazer else 'ajustado(s)'}")
         total += feitos
