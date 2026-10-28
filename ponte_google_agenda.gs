@@ -9,10 +9,12 @@
  * script (rode a função configurar() uma vez; ela cria a chave e mostra no
  * registro). Nenhuma senha do Google sai daqui.
  *
- * Chamada aberta: depois de criar o evento, tenta deixar a sala do Meet com
- * acesso ABERTO (quem tem o link entra sem pedir permissão), pela API do
- * Google Meet. Se a conta não permitir, devolve aberta=false e o link continua
- * valendo com as regras normais.
+ * Chamada aberta: a sala do Meet nasce pela API do Google Meet já com acesso
+ * ABERTO (quem tem o link entra sem pedir permissão) e é presa ao evento da
+ * agenda. O Google não deixa abrir depois uma sala criada pela própria Agenda
+ * (caso de 28/10). Se a API falhar, cai na sala normal da Agenda (aberta=false).
+ * A API do Meet precisa estar ativada no projeto do Google Cloud ligado ao
+ * script ("Ponte Agenda Escritorio", criado em 28/10).
  */
 
 var CALENDARIO = 'primary';  // agenda principal da conta que instala o script
@@ -29,6 +31,12 @@ function configurar() {
   // Força a autorização de todas as permissões na primeira execução.
   CalendarApp.getDefaultCalendar();
   UrlFetchApp.getRequest('https://meet.googleapis.com/v2/spaces');
+}
+
+/** Teste à mão no editor: cria uma sala e mostra se ela nasceu aberta. */
+function testarSalaAberta() {
+  var sala = criarSalaAberta();
+  Logger.log(sala ? 'sala ' + sala.meetingUri + ' com acesso ' + sala.config.accessType : 'a API do Meet recusou');
 }
 
 function doPost(e) {
@@ -58,7 +66,9 @@ function buscar(p) {
     timeMin: inicioDia.toISOString(), timeMax: fimDia.toISOString(), singleEvents: true, q: p.nome
   }).items || [];
   var achados = itens.filter(function (ev) { return ev.status !== 'cancelled'; }).map(function (ev) {
-    return { id: ev.id, titulo: ev.summary, inicio: ev.start.dateTime, link: ev.hangoutLink || '' };
+    var local = ev.location || '';
+    return { id: ev.id, titulo: ev.summary, inicio: ev.start.dateTime,
+             link: ev.hangoutLink || (local.indexOf('meet.google.com') >= 0 ? local : '') };
   });
   return { ok: true, eventos: achados };
 }
@@ -84,7 +94,22 @@ function criar(p) {
                                        conferenceSolutionKey: { type: 'hangoutsMeet' } } }
   };
   if (p.convidado) evento.attendees = [{ email: p.convidado }];
-  var criado = Calendar.Events.insert(evento, CALENDARIO, { conferenceDataVersion: 1, sendUpdates: 'all' });
+  var sala = criarSalaAberta();
+  var criado = null;
+  if (sala) {
+    evento.location = sala.meetingUri;
+    evento.conferenceData = { conferenceId: sala.meetingCode, conferenceSolution: { key: { type: 'hangoutsMeet' } },
+                              entryPoints: [{ entryPointType: 'video', uri: sala.meetingUri,
+                                              label: sala.meetingUri.replace('https://', '') }] };
+    try {
+      criado = Calendar.Events.insert(evento, CALENDARIO, { conferenceDataVersion: 1, sendUpdates: 'all' });
+    } catch (err) {  // a Agenda recusou prender a sala: o link vai só no local do evento
+      delete evento.conferenceData;
+      criado = Calendar.Events.insert(evento, CALENDARIO, { sendUpdates: 'all' });
+    }
+    return { ok: true, id: criado.id, link: sala.meetingUri, ja_existia: false, aberta: true };
+  }
+  criado = Calendar.Events.insert(evento, CALENDARIO, { conferenceDataVersion: 1, sendUpdates: 'all' });
   var link = criado.hangoutLink || '';
   for (var i = 0; !link && i < 5; i++) {  // o Meet às vezes leva alguns segundos para ficar pronto
     Utilities.sleep(1500);
@@ -94,7 +119,27 @@ function criar(p) {
   return { ok: true, id: criado.id, link: link, ja_existia: false, aberta: abrirSala(link) };
 }
 
-/** Acesso ABERTO na sala do Meet: quem tem o link entra sem pedir para entrar. */
+/** Cria a sala pela API do Meet já ABERTA. Devolve a sala ({meetingUri, meetingCode, config}) ou null. */
+function criarSalaAberta() {
+  try {
+    var r = UrlFetchApp.fetch('https://meet.googleapis.com/v2/spaces', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      payload: JSON.stringify({ config: { accessType: 'OPEN' } })
+    });
+    if (r.getResponseCode() !== 200) {
+      Logger.log('Meet recusou a sala: ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 300));
+      return null;
+    }
+    var sala = JSON.parse(r.getContentText());
+    return sala.meetingUri && sala.config && sala.config.accessType === 'OPEN' ? sala : null;
+  } catch (err) {
+    Logger.log('Meet falhou: ' + String(err).slice(0, 300));
+    return null;
+  }
+}
+
+/** Reserva: tenta abrir uma sala já existente (o Google só deixa nas salas criadas pela API). */
 function abrirSala(link) {
   if (!link) return false;
   var codigo = link.split('/').pop();
@@ -108,4 +153,14 @@ function abrirSala(link) {
   } catch (err) {
     return false;
   }
+}
+
+/** Teste à mão no editor: cria um evento de teste amanhã às 23h, mostra o link e apaga o evento. */
+function testarCriarEvento() {
+  var amanha = Utilities.formatDate(new Date(Date.now() + 86400000), FUSO, 'yyyy-MM-dd');
+  var r = criar({ titulo: 'TESTE sala aberta (apagar)', nome: 'TESTE sala aberta', inicio: amanha + 'T23:00:00',
+                  fim: amanha + 'T23:30:00', descricao: 'teste' });
+  var ev = Calendar.Events.get(CALENDARIO, r.id);
+  Logger.log(JSON.stringify({ link: r.link, aberta: r.aberta, linkDaAgenda: ev.hangoutLink || '', local: ev.location }));
+  Calendar.Events.remove(CALENDARIO, r.id);
 }

@@ -119,9 +119,17 @@ https://script.google.com com a conta do escritório:
    endereço) e `GOOGLE_AGENDA_CHAVE` (a chave).
 Sem esses dois segredos, nada quebra: o auditor continua criando o evento.
 
-Sala aberta: o script tenta deixar a sala do Meet com acesso aberto (quem tem o
-link entra sem pedir permissão). O aviso no grupo diz se conseguiu. Contas
-Gmail comuns não permitem pôr o advogado como co-organizador da chamada.
+Sala aberta (desde 28/10/2026): a sala do Meet nasce pela API do Google Meet já
+com acesso aberto (quem tem o link entra sem pedir permissão) e é presa ao evento
+da agenda. O Google não deixa abrir depois uma sala criada pela própria Agenda.
+Para isso o script está ligado ao projeto "Ponte Agenda Escritorio" do Google
+Cloud (APIs do Meet e do Calendar ativadas, app OAuth em produção; a conta do
+escritório precisa da verificação em duas etapas para entrar no Cloud). A
+política de privacidade exigida pelo Google está em calctrab-pro/privacidade.html.
+Se a API falhar, a ponte cai na sala normal da Agenda e o aviso no grupo diz
+"controle de entrada padrão". No editor do script, `testarSalaAberta` e
+`testarCriarEvento` conferem tudo. Contas Gmail comuns não permitem pôr o
+advogado como co-organizador da chamada.
 
 ## Depois da reunião: avaliação, resgate e comprovantes (desde 23/10/2026)
 
