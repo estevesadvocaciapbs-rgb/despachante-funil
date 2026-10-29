@@ -139,6 +139,40 @@ function criarSalaAberta() {
   }
 }
 
+/**
+ * Limpeza da pasta "Mídias - Whatsapp" (pedido da usuária, 29/10): a integração do Drive da Za.Ia salva TODA mídia
+ * que chega no WhatsApp, numa subpasta por telefone. A rotina Pós-reunião move os arquivos de cliente para
+ * Processos › Área › Nome; o que sobra aqui há mais de DIAS_MIDIAS dias vai para a LIXEIRA (o Google guarda 30 dias).
+ * A folga cobre documento mandado antes da assinatura, que a rotina só move depois. Pastas de cliente nunca são tocadas.
+ */
+var PASTA_MIDIAS = '1x8EkMbdFFHt8Bl4uF-QRHxi8t9jfbYH8';
+var DIAS_MIDIAS = 7;
+
+function limparMidias() {
+  var limite = new Date(Date.now() - DIAS_MIDIAS * 864e5);
+  var raiz = DriveApp.getFolderById(PASTA_MIDIAS);
+  var pastas = [raiz], n = 0;
+  var subs = raiz.getFolders();
+  while (subs.hasNext()) pastas.push(subs.next());
+  pastas.forEach(function (pasta) {
+    var arqs = pasta.getFiles();
+    while (arqs.hasNext()) {
+      var a = arqs.next();
+      if (a.getDateCreated() < limite) { a.setTrashed(true); n++; }
+    }
+  });
+  Logger.log(n + ' arquivo(s) com mais de ' + DIAS_MIDIAS + ' dias foram para a lixeira');
+}
+
+/** Rode uma vez no editor: agenda limparMidias todo dia às 21h (depois da última rodada da Pós-reunião). */
+function instalarLimpeza() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'limparMidias') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('limparMidias').timeBased().everyDays(1).atHour(21).inTimezone(FUSO).create();
+  limparMidias();
+}
+
 /** Reserva: tenta abrir uma sala já existente (o Google só deixa nas salas criadas pela API). */
 function abrirSala(link) {
   if (!link) return false;
