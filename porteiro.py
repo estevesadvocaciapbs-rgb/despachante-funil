@@ -95,6 +95,9 @@ def resolvido_pelo_codigo(texto, quem):
     linhas = [l for l in (texto or "").splitlines() if l.strip()]
     if not linhas:
         return True
+    import pauta
+    if pauta.ler_resposta(texto) is not None:
+        return True  # "PAUTA ..." / "HORÁRIO 9h30": resposta ao pedido de pauta de quinta, o código anota (29/10)
     cmds = secretaria.linhas_de_comando(texto)
     if sum(l.count("\n") + 1 for l, _ in cmds) == len(linhas):  # toda linha é comando (ou texto de CLIENTE 2:)
         # no privado do Dr. Lucas a secretaria só executa CLIENTE; o resto (AGENDAR...) é do Secretário com IA

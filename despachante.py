@@ -2092,6 +2092,13 @@ def main():
             _avisar_orcamento(zaia, erro)
         except Exception as erro:
             log(f"retorno mensal falhou: {type(erro).__name__}")
+        try:  # pauta da reunião de sexta: pedido na quinta 17h, reunião no EasyJur, pauta às 8h de sexta (29/10)
+            import pauta
+            pauta.rodada(zaia, easyjur_fn, lidas, datetime.now(timezone.utc), log)
+        except OrcamentoEasyJur as erro:
+            _avisar_orcamento(zaia, erro)
+        except Exception as erro:
+            log(f"pauta da reunião falhou: {type(erro).__name__}")
         try:  # porteiro: sinaliza ao Claude só quando chega pedido novo de advogado
             import porteiro
             porteiro.rodada(zaia, datetime.now(timezone.utc), contagem, conversas_lidas=lidas)
