@@ -107,6 +107,32 @@ z2, ej2 = rodar_resumo(conv + [msg(3, "AGENT", texto, "2026-10-19T13:02:00.000Z"
 assert not z2.enviadas and not ej2.chamadas
 print("OK — LIDA executa uma vez só")
 
+# ---- caso de 29/10: "lida 2 manter 1" numa linha; publicação descartada; erro de um item não trava o outro
+assert [c for _, c in s.linhas_de_comando("lida 2 manter 1")] == [("LIDA", "2"), ("MANTER", "1")]
+assert [c[0] for _, c in s.linhas_de_comando("lida 1 2 , manter 2 1")] == ["LIDA", "MANTER"]
+assert len(s.linhas_de_comando("CLIENTE 1: a carta foi lida 2 vezes")) == 1
+assert s.motivo_erro(RuntimeError("Error calling tool 'x': HTTP error 422: Unprocessable Entity - {'errors': "
+                                  "[{'field': '', 'message': 'Publicação descartada não pode'}]}")) == "Publicação descartada não pode"
+
+
+class EJDescartada(FakeEJ):
+    def chamar(self, f, **a):
+        if f == "list_publicacoes" and a.get("codPublicacao") == "7925421099":
+            self.chamadas.append((f, a))
+            return {"data": [{"id": 601, "status": "D", "lida": False}]}
+        if f == "atualizar_leitura_publicacao" and a["publicacao_id"] == 601:
+            raise RuntimeError("não devia tentar")
+        return super().chamar(f, **a)
+
+
+s._feitos.clear()
+z, ej = FakeZ(), EJDescartada()
+s.comandos_do_resumo(z, lambda: ej, FERN, [msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),
+                                           msg(5, "CONTACT", "lida 2 1", "2026-10-19T13:00:00.000Z")], AGORA, {})
+texto = z.enviadas[0][1]
+assert "item 2" in texto and "descartada" in texto and "✅ Lida: item 1" in texto and "⚠️" not in texto
+print("OK — descartada não dá erro, e LIDA/MANTER na mesma linha")
+
 # ---- PRAZO: data interna 2 dias úteis antes, pulando fim de semana e feriado
 s._feitos.clear()
 z, ej = rodar_resumo([msg(1, "AGENT", RESUMO, "2026-10-19T10:36:00.000Z"),

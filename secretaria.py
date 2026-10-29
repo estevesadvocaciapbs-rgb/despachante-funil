@@ -299,6 +299,12 @@ def num_item(x):
     return re.sub(r"^([AMT]?)0+(?=\d)", r"\1", x.strip().upper())
 
 
+def motivo_erro(erro):
+    """Só a frase do sistema ('Publicação descartada não pode...'), sem o 'Error calling tool... HTTP 422'."""
+    m = re.search(r"'message':\s*'([^']+)'", str(erro))
+    return m.group(1) if m else str(erro)[:160]
+
+
 def itens_citados(resto):
     resto = re.sub(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", " ", resto)
     return [num_item(x) for x in RE_LISTA_ITENS.findall(resto)]
@@ -360,6 +366,9 @@ class Execucao:
                 self.linhas.append(f"⚠️ Não achei a publicação do {rotulo} no EasyJur.")
                 return
             p = pubs[0]
+            if p.get("status") == "D":  # o EasyJur recusa marcar descartada (erro 422, caso de 29/10)
+                self.linhas.append(f"✅ {rotulo}: já está *descartada* no EasyJur, então não precisa marcar como lida.")
+                return
             self.ej.chamar("atualizar_leitura_publicacao", publicacao_id=int(p["id"]), lida=True,
                            marcar_relacionadas=True)
             if p.get("numProcesso") and p.get("dataPublicacao"):
@@ -408,8 +417,14 @@ class Execucao:
         nums = list(self.itens) if norm(resto).startswith("todas") else itens_citados(resto)
         for num in nums:
             it = self.item(num)
-            if it:
+            if not it:
+                continue
+            try:  # um item com erro não impede os outros da mesma linha
                 self.marcar_lida(num, it)
+            except Exception as erro:
+                if type(erro).__name__ == "OrcamentoEasyJur":
+                    raise
+                self.linhas.append(f"⚠️ Não consegui marcar o item {num} como lida: {motivo_erro(erro)}")
 
     def manter(self, resto):
         for num in itens_citados(resto):
@@ -555,14 +570,20 @@ class Execucao:
 def linhas_de_comando(texto):
     """[(linha, (comando, resto))]; o texto de "CLIENTE 2: ..." pode continuar nas linhas seguintes."""
     saida = []
-    for l in (texto or "").splitlines():
-        if not l.strip():
+    for linha in (texto or "").splitlines():
+        if not linha.strip():
             continue
-        c = classificar_linha(l)
-        if c:
-            saida.append((l, c))
-        elif saida and saida[-1][1][0] == "CLIENTE_TEXTO":
-            saida[-1] = (saida[-1][0] + "\n" + l, saida[-1][1])
+        # "lida 2 manter 1" numa linha só são dois comandos (caso de 29/10: o MANTER sumia dentro do LIDA)
+        # só divide linha que já começa com LIDA/MANTER (texto ao cliente com "lida 2 vezes" não vira comando)
+        c = classificar_linha(linha)
+        partes = re.split(r"[\s,;]+(?=(?:lidas?|lido|manter)\s+[amtAMT]?\d)", linha, flags=re.I) \
+            if c and c[0] in ("LIDA", "MANTER") else [linha]
+        for l in partes:
+            c = classificar_linha(l)
+            if c:
+                saida.append((l, c))
+            elif saida and saida[-1][1][0] == "CLIENTE_TEXTO":
+                saida[-1] = (saida[-1][0] + "\n" + l, saida[-1][1])
     return saida
 
 
@@ -611,7 +632,7 @@ def comandos_do_resumo(zaia, ej_fn, adv, msgs, agora, contagem, so_cliente=False
             except Exception as erro:
                 if type(erro).__name__ == "OrcamentoEasyJur":
                     raise
-                exe.linhas.append(f"⚠️ Não consegui executar \"{linha.strip()[:40]}\": {str(erro)[:120]}")
+                exe.linhas.append(f"⚠️ Não consegui executar \"{linha.strip()[:40]}\": {motivo_erro(erro)}")
         if exe.linhas:
             zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto="\n".join(exe.linhas) + f"\n_{marca(m)}_")
             contagem["comandos"] = contagem.get("comandos", 0) + len(linhas)
