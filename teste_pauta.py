@@ -87,3 +87,12 @@ p._estado.clear()
 p.rodada(z, lambda: ej, {}, S8)
 assert len(z.env) == antes + 3
 print("OK — sexta 8h: pauta enviada aos três uma vez")
+
+# ---- plantão parado na quinta 17h–20h: nada às 23h; pedido sai sexta 7h, falando da reunião "de hoje"
+p._estado.clear()
+z, ej = Z(), EJ()
+p.rodada(z, lambda: ej, {}, datetime(2026, 11, 6, 2, 0, tzinfo=timezone.utc))   # quinta 23h
+assert not z.env and not ej.chamadas
+p.rodada(z, lambda: ej, {}, datetime(2026, 11, 6, 10, 5, tzinfo=timezone.utc))  # sexta 7h05
+assert len(z.env) == 3 and "reunião de hoje" in z.env[0][1] and ej.chamadas.count("create_agenda") == 1
+print("OK — fora do horário não pede; sexta 7h pede a pauta da reunião de hoje")

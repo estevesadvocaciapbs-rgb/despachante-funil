@@ -33,9 +33,16 @@ def sexta_da_semana(agora_brt):
     return None
 
 
-def texto_pedido(adv, sexta):
+def hora_de_pedir(agora_brt):
+    """Pedido só em horário comercial: quinta 17h–20h; se perdeu (plantão parado), sexta 7h–9h30."""
+    d, h = agora_brt.date(), agora_brt.time()
+    return (d.weekday() == 3 and time(17) <= h < time(20)) or (d.weekday() == 4 and time(7) <= h < time(9, 30))
+
+
+def texto_pedido(adv, sexta, hoje=False):
     return (PEDIDO.format(s.ddmm(sexta)) + "\n"
-            f"{adv['nome']}, quais assuntos você quer levar à reunião de amanhã? Caso que precisa da opinião de "
+            f"{adv['nome']}, quais assuntos você quer levar à reunião de {'hoje' if hoje else 'amanhã'}? "
+            "Caso que precisa da opinião de "
             "todos, algo para conferir em conjunto, aviso para a equipe...\n"
             "Responda aqui começando com *PAUTA*, um assunto por linha. Exemplo:\n"
             "PAUTA\n- Conferir o cálculo do caso Fulano\n- Escala de atendimentos de novembro\n"
@@ -98,7 +105,7 @@ def rodada(zaia, ej_fn, lidas, agora, log=print):
             if r:
                 novas.append((adv, m) + r)
     hora_resumo = agora_brt.date() == sexta and agora_brt.time() >= time(8) and _estado.get("resumo") != sexta
-    criar = agora_brt.date() < sexta and _estado.get("criada") != sexta
+    criar = hora_de_pedir(agora_brt) and _estado.get("criada") != sexta
     if not novas and not criar and not hora_resumo:
         return  # nada a fazer: não gasta chamada do EasyJur
     ej = ej_fn()
@@ -111,7 +118,8 @@ def rodada(zaia, ej_fn, lidas, agora, log=print):
         log(f"pauta: reunião de {s.ddmm(sexta)} criada no EasyJur ({novo})")
         for adv in ADVS:
             try:
-                zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=texto_pedido(adv, sexta))
+                zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"],
+                            texto=texto_pedido(adv, sexta, hoje=agora_brt.date() == sexta))
             except Exception as erro:
                 log(f"pauta: pedido a {adv['chave']} falhou: {type(erro).__name__}")
         item = reuniao(ej, sexta)
