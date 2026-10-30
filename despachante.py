@@ -2136,6 +2136,13 @@ def main():
             _avisar_orcamento(zaia, erro)
         except Exception as erro:
             log(f"pauta da reunião falhou: {type(erro).__name__}")
+        try:  # competência das parcelas em aberto = mês do vencimento, às 6h (30/10)
+            import competencias
+            competencias.rodada(easyjur_fn, datetime.now(timezone.utc), log)
+        except OrcamentoEasyJur as erro:
+            _avisar_orcamento(zaia, erro)
+        except Exception as erro:
+            log(f"competência das parcelas falhou: {type(erro).__name__}")
         try:  # porteiro: sinaliza ao Claude só quando chega pedido novo de advogado
             import porteiro
             porteiro.rodada(zaia, datetime.now(timezone.utc), contagem, conversas_lidas=lidas)
