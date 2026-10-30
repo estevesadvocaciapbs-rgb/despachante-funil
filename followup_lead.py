@@ -61,6 +61,9 @@ def proximo(msgs, agora, d):
     ultima = msgs[-1]
     if ultima.get("sender") == "CONTACT":
         return None, "lead respondeu (a Annie continua)"
+    import hesitacao
+    if hesitacao.recusou(msgs, d):  # "vou na Defensoria" seguido de "Ainda está por aí?" (caso de 30/10)
+        return None, "lead recusou"
     # última fala do lead e o que veio depois dela
     i_lead = max((i for i, m in enumerate(msgs) if m.get("sender") == "CONTACT"), default=-1)
     depois = msgs[i_lead + 1:]

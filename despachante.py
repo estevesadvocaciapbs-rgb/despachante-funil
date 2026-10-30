@@ -2087,6 +2087,11 @@ def main():
         followup_lead.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], pendentes)
     except Exception as erro:
         log(f"follow-up de lead falhou: {type(erro).__name__}: {erro}")
+    try:  # lead de caso prioritário hesitando: aviso imediato no grupo (30/10)
+        import hesitacao
+        hesitacao.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__])
+    except Exception as erro:
+        log(f"aviso de lead em dúvida falhou: {type(erro).__name__}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
     except OrcamentoEasyJur as erro:
