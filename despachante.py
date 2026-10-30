@@ -941,11 +941,43 @@ def avisar_nao_agendado(zaia, grupo, lead, av):
     log("lead trabalhista não agendado (viabilidade) — avisado no grupo")
 
 
+# Matéria criminal também aparece dentro de lead de outra área (caso de 29/10: agressão num lead de Família).
+RE_CRIMINAL = re.compile(r"\b(criminal|penal|crimes?|agress\w*|violencia domestica|maria da penha|medida protetiva|"
+                         r"ameac\w*|boletim de ocorrencia|delegacia|flagrante|inquerito|pres[oa]|estupro|homicidio|"
+                         r"furto|roubo|estelionato|calunia|difamacao|injuria)\b")
+MARCA_CRIMINAL = "🚨 *CASO CRIMINAL"
+_criminais = set()  # telefones já conferidos neste plantão (evita baixar a conversa da Dra. Fernanda a cada minuto)
+
+
+def avisar_criminal(zaia, conversas, lead, area):
+    """Todo lead com matéria criminal vai ao privado da Dra. Fernanda, seja qual for a área (pedido da usuária, 30/10)."""
+    if lead["tel"] in _criminais:
+        return
+    if area not in ("criminal", "vd") and not RE_CRIMINAL.search(sem_acento(lead["texto"])):
+        return
+    _criminais.add(lead["tel"])
+    if any(MARCA_CRIMINAL in (m.get("content") or "") and lead["tel"] in (m.get("content") or "")
+           for m in conversas.de(FERNANDA["tel"])[1]):
+        return  # já avisada (outro plantão)
+    if DRY_RUN:
+        log("[simulação] aviso de caso criminal à Dra. Fernanda")
+        return
+    zaia.chamar("enviar_mensagem", assinatura="ia", numero=FERNANDA["tel"], texto=(
+        f"{MARCA_CRIMINAL} — {lead['nome']} ({lead['tel']})*\n"
+        f"{NOME_AREA.get(area, 'Área a confirmar')}\n*Caso:* {resumo_do_caso(lead['texto'])}\n"
+        "_Aviso automático: todo lead com matéria criminal vem para a senhora._"))
+    log("lead com matéria criminal — Dra. Fernanda avisada")
+
+
 def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
     todas = [m for l in leads for m in conversas.de(l["tel"])[1]]
     reservados = reservas_recentes(todas, agora)
     for lead in leads:
         area, pular = classificar(lead["texto"])
+        try:
+            avisar_criminal(zaia, conversas, lead, area)
+        except Exception as erro:
+            log(f"aviso de caso criminal falhou: {type(erro).__name__}")
         if pular:
             contagem["pulados"] += 1
             log(f"lead pulado ({pular}) — fica com a rotina com IA")
