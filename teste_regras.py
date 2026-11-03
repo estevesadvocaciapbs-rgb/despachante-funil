@@ -849,3 +849,50 @@ d.comandos_dos_advogados(_zp9, _cvA, lambda: _ej9, lambda: AgLivre([], _ocup2), 
 assert not [a for f, a in _ej9.env if f == "create_agenda"]
 assert "já tem compromisso" in [a["texto"] for f, a in _zp9.env if f == "enviar_mensagem"][-1]
 print("OK — GRAVAR recusa horário que já tem compromisso")
+
+
+# ---- 03/11 (pedido da Dra. Danielle): sem vaga dela, procurar a agenda do Dr. Lucas, o horário mais próximo
+from datetime import date
+
+
+class AgDias(AgPor):
+    def __init__(s, por_adv, dias): s.p = por_adv; s.dias = dias
+    def dias_possiveis(s): return s.dias
+
+
+_dd = [date(2026, 11, 4), date(2026, 11, 5), date(2026, 11, 9)]
+_h = lambda dia, hh, mm=0: datetime(2026, 11, dia, hh, mm, tzinfo=d.BRT)
+_ag = AgDias({d.DANIELLE["id"]: [_h(4, 14, 30)], d.LUCAS["id"]: [_h(4, 10, 30)]}, _dd)
+assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set())[0] is d.DANIELLE  # ela tem vaga no próximo dia útil
+_ag = AgDias({d.DANIELLE["id"]: [_h(9, 10, 30)], d.LUCAS["id"]: [_h(5, 14, 0)]}, _dd)
+assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set()) == (d.LUCAS, [_h(5, 14, 0)])
+_ag = AgDias({d.DANIELLE["id"]: [_h(5, 14, 30)], d.LUCAS["id"]: [_h(5, 14, 30)]}, _dd)
+assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set())[0] is d.DANIELLE  # empate fica com ela
+_ag = AgDias({d.DANIELLE["id"]: [], d.LUCAS["id"]: []}, _dd)
+assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set()) == (None, [])
+print("OK — primeira oferta: sem vaga da Dra. Danielle no próximo dia útil, vai quem tiver o horário mais próximo")
+
+# relato longo do caso depois da oferta não é pedido de horário (caso Francinildo, 27/10)
+_relato = ("Essa questão aí que você falou, eu entrava cedo e não tinha hora para ir almoçar, porque eu não batia "
+           "ponto, os meus companheiros da minha equipe todos batiam ponto. ") * 4
+assert d.tipo_de_recusa([_relato], _ofs) is None
+assert d.tipo_de_recusa([_relato, "só consigo à noite"], _ofs) == "excecao"
+print("OK — relato longo não vira exceção de horário")
+
+# lead pede um período que a Dra. Danielle não tem: o mesmo período sai da agenda do Dr. Lucas
+_leadX = {"nome": "Ana Teste", "tel": "5594900000041", "quando": datetime(2026, 10, 20, 12, 0, tzinfo=_tz2.utc),
+          "texto": "‼️NOVA OPORTUNIDADE‼️\nÁREA: Trabalhista — Rescisão Indireta\nResumo: caso de teste."}
+_convX = {"id": "c41", "contact": {"id": "k41", "name": "Ana Teste"}}
+_oX = _m("USER", "*Annie*:\n" + d.texto_da_oferta("Ana", d.DANIELLE, [_d1, _d2]), "2026-10-21T12:00:00.000Z")
+_pX = _m("CONTACT", "não posso nesses, teria amanhã de manhã?", "2026-10-21T12:02:00.000Z")
+_agX = AgPor({d.DANIELLE["id"]: [datetime(2026, 10, 22, 15, 30, tzinfo=d.BRT)],
+              d.LUCAS["id"]: [datetime(2026, 10, 22, 10, 30, tzinfo=d.BRT), datetime(2026, 10, 22, 11, 0, tzinfo=d.BRT)]})
+d._reofertas.clear(); d._avisos_advogado.clear()
+_z = ZP()
+d.outros_horarios(_z, ConvL({}), _convX, _leadX, [_oX, _pX], [_oX], lambda: _agX, set, _tA + _td2(minutes=1), {})
+_r = [a["mensagem"] for f, a in _z.env if f == "agendar_mensagem"]
+assert len(_r) == 1 and d.MARCA_COLEGA in _r[0] and d.MARCA_OFERTA in _r[0], _r
+assert "22/10 às 11:00" in _r[0] and "10:30" not in _r[0] and "Danielle" not in _r[0] and d.advogado_do_texto(_r[0]) is d.LUCAS, _r
+# pedido presencial não passa para o Dr. Lucas (só online)
+assert d.colegas(d.FERNANDA, _leadX) == [] and d.colegas(d.DANIELLE, _leadX) == [d.LUCAS]
+print("OK — lead pede período sem vaga da Dra. Danielle: oferta do Dr. Lucas no mesmo período")

@@ -969,6 +969,30 @@ def avisar_criminal(zaia, conversas, lead, area):
     log("lead com matéria criminal — Dra. Fernanda avisada")
 
 
+def escolher_advogado(agenda, candidatos, reservados):
+    """O primeiro da lista atende se tiver horário no próximo dia útil; senão, quem tiver o horário mais próximo.
+
+    Pedido da Dra. Danielle (03/11): sem vaga dela, a automação procura a agenda dos outros advogados.
+    Empate fica com o primeiro da lista."""
+    dias = agenda.dias_possiveis() if hasattr(agenda, "dias_possiveis") else []
+    melhor, slots = None, []
+    for c in candidatos:
+        livres = agenda.livres(c, reservados)
+        if livres and (not slots or livres[0] < slots[0]):
+            melhor, slots = c, livres
+        if slots and (not dias or slots[0].date() == dias[0]):
+            break
+    return melhor, slots
+
+
+def colegas(adv, lead):
+    """Quem mais pode atender o lead quando quem ofertou não tem o horário pedido (só Dra. Danielle e Dr. Lucas)."""
+    area, _ = classificar(lead.get("texto", ""))
+    if adv is FERNANDA or pediu_fernanda(lead.get("texto", "")) or area in ("familia", "vd", "criminal", "civel"):
+        return []
+    return [c for c in (DANIELLE, LUCAS) if c is not adv]
+
+
 def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
     todas = [m for l in leads for m in conversas.de(l["tel"])[1]]
     reservados = reservas_recentes(todas, agora)
@@ -1020,12 +1044,7 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
         else:
             candidatos = [DANIELLE, LUCAS]
 
-        adv, slots = None, []
-        for c in candidatos:
-            livres = agenda.livres(c, reservados)
-            if livres:
-                adv, slots = c, livres
-                break
+        adv, slots = escolher_advogado(agenda, candidatos, reservados)
 
         if not slots:
             contagem["sem_horario"] += 1
@@ -1508,6 +1527,7 @@ def sugerir_gravar(zaia, conv, lead, msgs, oferta, ofertados, grupo, contagem):
 # PRIVADO do advogado (não no grupo), com os horários livres dele e os comandos OFERECER/GRAVAR prontos.
 MARCA_MAIS = "em outros horários também"
 MARCA_ESPECIAL = "separou um horário especial"
+MARCA_COLEGA = "quem tem horário livre"
 MAX_REOFERTAS = 2
 ESPERA_OUTROS = timedelta(minutes=1)    # a Annie responde primeiro ("já te mando outras opções")
 ESPERA_ADVOGADO = timedelta(minutes=5)  # o lead costuma mandar a disponibilidade em várias mensagens
@@ -1517,6 +1537,7 @@ RE_SEM_HORARIO = re.compile(r"\bsem (horario|tempo)\b|nao tenho (horario|tempo)|
                             r"fora da cidade|nao sei quando|depois (eu )?(vejo|marco|te falo|te aviso|aviso)|"
                             r"mais (pra|para) frente|outro momento|(essa|esta) semana (nao|ta|esta|fica) "
                             r"(da|complicad|corrid|dificil)|nao (vou )?(consigo|posso) (essa|esta) semana")
+LIMITE_PEDIDO = 400  # mensagem maior que isso é relato do caso, não resposta à oferta
 DIAS_NOME = {"segunda": 0, "terca": 1, "quarta": 2, "quinta": 3, "sexta": 4}
 _reofertas, _avisos_advogado = set(), set()
 
@@ -1528,6 +1549,7 @@ def sem_saudacao(texto):
 
 def tipo_de_recusa(textos, ofertados):
     """'excecao', 'sem_horario', 'outro' ou None, lendo o que o lead escreveu depois da oferta."""
+    textos = [x for x in textos if len(x) <= LIMITE_PEDIDO]  # caso Francinildo (27/10): "não tinha hora para almoçar"
     t = sem_saudacao(" ".join(textos))
     horas = [int(h) for h, _ in RE_HORA_LEAD.findall(t)]
     if RE_EXCECAO.search(t) or any(h < 8 or h >= 18 or h in (12, 13) for h in horas):
@@ -1614,7 +1636,8 @@ def outros_horarios(zaia, conversas, conv, lead, msgs, ofertas, agenda_fn, reser
     if not tipo:
         return
     ciclo = [o for o in ofertas if o["createdAt"] >= inicio_do_ciclo(ofertas)]
-    if tipo == "outro" and sum(MARCA_MAIS in (o.get("content") or "") for o in ciclo) >= MAX_REOFERTAS:
+    if tipo == "outro" and sum(MARCA_MAIS in (o.get("content") or "") or MARCA_COLEGA in (o.get("content") or "")
+                               for o in ciclo) >= MAX_REOFERTAS:
         tipo = "recusou"
     adv = advogado_do_texto(txt)
     nome = (conv["contact"].get("name") or lead["nome"]).strip()
@@ -1622,23 +1645,40 @@ def outros_horarios(zaia, conversas, conv, lead, msgs, ofertas, agenda_fn, reser
     if tipo == "outro":
         if idade < ESPERA_OUTROS or chave in _reofertas:
             return
-        livres = agenda_fn().livres(adv, reservados_fn())
-        slots, atendeu = escolher_outros(livres, ofertados_no_ciclo(msgs, ofertas, agora),
-                                         " ".join(m.get("content") or "" for m in do_lead), agora)
+        ja = ofertados_no_ciclo(msgs, ofertas, agora)
+        pedido = " ".join(m.get("content") or "" for m in do_lead)
+        slots, atendeu = escolher_outros(agenda_fn().livres(adv, reservados_fn()), ja, pedido, agora)
+        presencial = modo_da_conversa(msgs, inicio_do_ciclo(ofertas)) == "presencial"
+        colega = None
+        if not (slots and atendeu):
+            # pedido da Dra. Danielle (03/11): sem o período pedido na agenda de quem ofertou, procura a do colega
+            for c in colegas(adv, lead):
+                if presencial and c.get("so_online"):
+                    continue
+                s2, ok2 = escolher_outros(agenda_fn().livres(c, reservados_fn()), ja, pedido, agora)
+                if s2 and (ok2 or not slots):
+                    colega, slots, atendeu = c, s2, ok2
+                    break
         if slots:
             _reofertas.add(chave)
-            presencial = modo_da_conversa(msgs, inicio_do_ciclo(ofertas)) == "presencial"
             como = f"{MARCA_PRESENCIAL}, aqui no escritório," if presencial else "pode te atender por videochamada"
-            texto = (f"Sem problema, {primeiro_nome(nome)}! {adv['nome']} {como} {MARCA_MAIS}. "
-                     + ("" if atendeu else "No período que você pediu não tenho horário livre, mas ")
-                     + f"{MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots)
-                     + "\n\nQual fica melhor pra você?")
+            if colega:  # o texto não cita quem ofertou antes: o advogado da oferta é lido pelo nome no texto
+                texto = (f"Sem problema, {primeiro_nome(nome)}! Nesse período {MARCA_COLEGA} é "
+                         f"{colega['nome'][0].lower()}{colega['nome'][1:]}, que {como}. "
+                         + ("" if atendeu else "No período exato que você pediu não há vaga, mas ")
+                         + f"{MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots)
+                         + "\n\nQual fica melhor pra você?")
+            else:
+                texto = (f"Sem problema, {primeiro_nome(nome)}! {adv['nome']} {como} {MARCA_MAIS}. "
+                         + ("" if atendeu else "No período que você pediu não tenho horário livre, mas ")
+                         + f"{MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots)
+                         + "\n\nQual fica melhor pra você?")
             if not DRY_RUN:
                 quando = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:00.000Z")
                 zaia.chamar("agendar_mensagem", contatoId=conv["contact"]["id"], conversaId=conv["id"],
                             mensagem=texto, dataHora=quando, assinatura="ia", ativarIaAoResponder=True)
             contagem["reofertas"] = contagem.get("reofertas", 0) + 1
-            log("lead pediu outro horário: mais 2 horários oferecidos")
+            log("lead pediu outro horário: mais 2 horários oferecidos" + (f" ({colega['curto']})" if colega else ""))
             return
         tipo = "vazio"
     # exceção, sem horário, recusou as ofertas ou agenda sem vaga: o advogado decide, no privado dele
