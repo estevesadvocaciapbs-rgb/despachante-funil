@@ -2218,6 +2218,11 @@ def main():
         hesitacao.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__])
     except Exception as erro:
         log(f"aviso de lead em dúvida falhou: {type(erro).__name__}")
+    try:  # tarefa sem o raciocínio da IA e briefing repetido juntado na primeira (04/11)
+        import tarefas_limpas
+        tarefas_limpas.rodada(zaia, tarefas, contagem, log, DRY_RUN)
+    except Exception as erro:
+        log(f"limpeza das tarefas falhou: {type(erro).__name__}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
     except OrcamentoEasyJur as erro:
