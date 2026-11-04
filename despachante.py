@@ -2300,13 +2300,31 @@ def vigia(minutos, intervalo_s=60):
     except Exception as erro:
         log(f"Google Agenda: ponte com problema: {erro}")
     fim = time.monotonic() + minutos * 60
+    rodadas = 0
     while time.monotonic() < fim:
         try:
             main()
         except Exception as erro:
             log(f"rodada falhou: {type(erro).__name__}: {erro}")
+        rodadas += 1
+        if rodadas % 5 == 0 and codigo_novo():
+            log("plantão encerrado: código novo publicado, o próximo plantão já começa com ele")
+            return
         time.sleep(intervalo_s)
     log("plantão encerrado")
+
+
+def codigo_novo():
+    """Há commit novo no main desde o início do plantão? (caso de 04/11: a correção publicada às 16h só ia
+    valer no plantão seguinte, horas depois). Se o git falhar, segue o plantão."""
+    import subprocess
+    try:
+        subprocess.run(["git", "fetch", "-q", "origin", "main"], timeout=30, check=True, capture_output=True)
+        atual = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout
+        remoto = subprocess.run(["git", "rev-parse", "FETCH_HEAD"], capture_output=True, text=True, check=True).stdout
+        return atual.strip() != remoto.strip()
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":
