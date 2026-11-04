@@ -196,6 +196,32 @@ def ler_iso(texto):
 
 
 # ---------------------------------------------------------------- cliente MCP
+RE_DIA_DATA = re.compile(r"\b(segunda|ter[çc]a|quarta|quinta|sexta)(-feira)?(,?\s+(?:dia\s+)?)(\d{1,2})/(\d{1,2})\b",
+                         re.I)
+
+
+def dia_da_semana_certo(texto, hoje=None):
+    """Troca o dia da semana que não bate com a data ao lado ("quarta-feira, 05/11" → "quinta-feira, 05/11").
+
+    Caso Mônica (03/11): a oferta saiu com 05/11 como quarta. O dia certo é o da data."""
+    hoje = hoje or datetime.now(BRT).date()
+    nomes = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+
+    def certo(m):
+        dd, mm = int(m.group(4)), int(m.group(5))
+        try:
+            ano = hoje.year + (1 if mm < hoje.month - 6 else 0)
+            dia = date(ano, mm, dd)
+        except ValueError:
+            return m.group(0)
+        nome = nomes[dia.weekday()]
+        if sem_acento(nome) == sem_acento(m.group(1).lower()):
+            return m.group(0)
+        nome = nome.capitalize() if m.group(1)[0].isupper() else nome
+        return f"{nome}{m.group(2) or ''}{m.group(3)}{m.group(4)}/{m.group(5)}"
+    return RE_DIA_DATA.sub(certo, texto)
+
+
 class MCP:
     def __init__(self, url, token, nome):
         token = re.sub(r"^\s*(bearer\s+)?", "", token or "", flags=re.I).strip().strip('"\'')
@@ -253,6 +279,9 @@ class MCP:
 
     def chamar(self, ferramenta, **args):
         args = {k: v for k, v in args.items() if v is not None}
+        for k in ("mensagem", "texto"):
+            if ferramenta.startswith(("agendar_mensagem", "enviar_mensagem")) and isinstance(args.get(k), str):
+                args[k] = dia_da_semana_certo(args[k])
         resp = self._post({"jsonrpc": "2.0", "id": self._id(), "method": "tools/call",
                            "params": {"name": ferramenta, "arguments": args}})
         if not resp or "error" in resp:
@@ -601,18 +630,63 @@ def manha_e_tarde(slots):
     return escolhidos
 
 
+def dois_mais_proximos(listas):
+    """Os 2 horários da oferta, juntando as agendas de quem pode atender o lead.
+
+    listas: [(advogado, horários livres)], na ordem de preferência. Pedido da Dra. Danielle (04/11): os DOIS
+    horários seguem a regra do horário mais próximo; a Dra. Danielle só tem 10h30 de manhã e, com ele ocupado,
+    a manhã ia para a semana seguinte. Manhã e tarde do dia mais próximo; no mesmo dia, fica o primeiro da
+    lista. Um turno que só exista depois do dia útil seguinte dá lugar ao horário livre mais próximo.
+    Devolve [(advogado, horário)] em ordem de horário."""
+    pares = sorted((s, i) for i, (_, livres) in enumerate(listas) for s in livres)
+    if not pares:
+        return []
+
+    def melhor(cond):
+        cand = [p for p in pares if cond(p[0])]
+        if not cand:
+            return None
+        dia = min(s.date() for s, _ in cand)
+        return min((p for p in cand if p[0].date() == dia), key=lambda p: (p[1], p[0]))
+
+    escolha = [p for p in (melhor(lambda s: s.hour < 12), melhor(lambda s: s.hour >= 12)) if p]
+    primeiro = min(s.date() for s, _ in escolha)
+    limite = primeiro + timedelta(days=1)
+    while limite.weekday() > 3:  # atende de segunda a quinta
+        limite += timedelta(days=1)
+    escolha = [p for p in escolha if p[0].date() <= limite]
+    for p in sorted(pares, key=lambda p: (p[0].date(), p[1], p[0])):
+        if len(escolha) >= 2:
+            break
+        if all(p[0] != s for s, _ in escolha):
+            escolha.append(p)
+    return [(listas[i][0], s) for s, i in sorted(escolha)]
+
+
 def texto_slot(s):
     return f"{DIAS_SEMANA[s.weekday()]}, {s:%d/%m}, às {s:%H}h{s:%M}"
 
 
-def item_da_oferta(s):
-    """Uma linha da lista da oferta ao lead (pedido da usuária em 23/10: horários em lista, "10/10 às 14:30")."""
-    return f"• {DIAS_SEMANA[s.weekday()]}, {s:%d/%m} às {s:%H}:{s:%M}"
+def item_da_oferta(s, adv=None):
+    """Uma linha da lista da oferta ao lead (pedido da usuária em 23/10: horários em lista, "10/10 às 14:30").
+
+    Com o advogado (oferta com horários de advogados diferentes): "... às 14:30 com o Dr. Lucas"."""
+    quem = f" com {adv['nome'][0].lower()}{adv['nome'][1:]}" if adv else ""
+    return f"• {DIAS_SEMANA[s.weekday()]}, {s:%d/%m} às {s:%H}:{s:%M}{quem}"
 
 
 def texto_da_oferta(nome, adv, dois):
     lista = "\n".join(item_da_oferta(s) for s in dois)
     return (f"Olá, {nome}! {adv['nome']} analisou o seu caso e pode te atender por videochamada. "
+            f"{MARCA_OFERTA}:\n\n{lista}\n\nQual fica melhor pra você?")
+
+
+def texto_da_oferta_pares(nome, pares):
+    """Oferta inicial; com advogados diferentes, cada horário diz com quem é."""
+    if len({a["id"] for a, _ in pares}) == 1:
+        return texto_da_oferta(nome, pares[0][0], [s for _, s in pares])
+    lista = "\n".join(item_da_oferta(s, a) for a, s in pares)
+    return (f"Olá, {nome}! Nossa equipe analisou o seu caso e pode te atender por videochamada. "
             f"{MARCA_OFERTA}:\n\n{lista}\n\nQual fica melhor pra você?")
 
 
@@ -770,7 +844,10 @@ def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, conta
     da mesma mensagem.
     """
     adv = advogado_do_texto(txt_oferta)
-    troca = bool(adv.get("so_online"))
+    da_oferta = [(advogado_do_slot(txt_oferta, s) or adv, s) for s in dict.fromkeys(RE_SLOT.findall(txt_oferta))]
+    troca = all(a.get("so_online") for a, _ in da_oferta) if da_oferta else bool(adv.get("so_online"))
+    if not troca:  # oferta com o Dr. Lucas e a Dra. Danielle: presencial fica com os horários dela
+        adv = next(a for a, _ in da_oferta if not a.get("so_online")) if da_oferta else adv
     depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
     pedidos = [m for m in depois if m.get("sender") == "CONTACT"
                and pede_presencial(m.get("content") or "") == "presencial"]
@@ -810,7 +887,7 @@ def oferecer_presencial(zaia, conv, lead, msgs, oferta, txt_oferta, agora, conta
                  f"aqui no escritório. {MARCA_OFERTA}:\n\n" + "\n".join(item_da_oferta(s) for s in slots)
                  + "\n\nQual fica melhor pra você?")
     else:
-        slots = [data_do_texto(*s, agora) for s in dict.fromkeys(RE_SLOT.findall(txt_oferta))]
+        slots = [data_do_texto(*s, agora) for a, s in da_oferta if not a.get("so_online")]
         slots = [s for s in slots if s - agora >= timedelta(hours=1)]
         if not slots:
             return False  # os horários já passaram: fica com a equipe (aviso de outro horário)
@@ -857,6 +934,14 @@ def advogado_do_texto(txt):
     return DANIELLE if "Danielle" in txt else FERNANDA if "Fernanda" in txt else LUCAS
 
 
+def advogado_do_slot(txt, slot):
+    """Advogado escrito na linha do horário (oferta com advogados diferentes), ou None se a linha não diz."""
+    for linha in sem_assinatura(txt).splitlines():
+        if slot in RE_SLOT.findall(linha) and any(n in linha for n in ("Danielle", "Fernanda", "Lucas")):
+            return advogado_do_texto(linha)
+    return None
+
+
 def reservas_recentes(mensagens, agora):
     """Horários oferecidos nas últimas horas a qualquer lead contam como ocupados.
 
@@ -869,8 +954,8 @@ def reservas_recentes(mensagens, agora):
         if MARCA_OFERTA not in txt or agora - ler_iso(quando) > timedelta(hours=OFERTA_RESERVA_H):
             continue
         adv = advogado_do_texto(txt)
-        for dd, mm, hh, mi in RE_SLOT.findall(txt):
-            reservados.add((adv["id"], data_do_texto(dd, mm, hh, mi, agora)))
+        for s in RE_SLOT.findall(txt):
+            reservados.add(((advogado_do_slot(txt, s) or adv)["id"], data_do_texto(*s, agora)))
     return reservados
 
 
@@ -969,22 +1054,6 @@ def avisar_criminal(zaia, conversas, lead, area):
     log("lead com matéria criminal — Dra. Fernanda avisada")
 
 
-def escolher_advogado(agenda, candidatos, reservados):
-    """O primeiro da lista atende se tiver horário no próximo dia útil; senão, quem tiver o horário mais próximo.
-
-    Pedido da Dra. Danielle (03/11): sem vaga dela, a automação procura a agenda dos outros advogados.
-    Empate fica com o primeiro da lista."""
-    dias = agenda.dias_possiveis() if hasattr(agenda, "dias_possiveis") else []
-    melhor, slots = None, []
-    for c in candidatos:
-        livres = agenda.livres(c, reservados)
-        if livres and (not slots or livres[0] < slots[0]):
-            melhor, slots = c, livres
-        if slots and (not dias or slots[0].date() == dias[0]):
-            break
-    return melhor, slots
-
-
 def colegas(adv, lead):
     """Quem mais pode atender o lead quando quem ofertou não tem o horário pedido (só Dra. Danielle e Dr. Lucas)."""
     area, _ = classificar(lead.get("texto", ""))
@@ -1044,9 +1113,10 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
         else:
             candidatos = [DANIELLE, LUCAS]
 
-        adv, slots = escolher_advogado(agenda, candidatos, reservados)
+        # pedidos da Dra. Danielle (03/11 e 04/11): cada um dos 2 horários é o mais próximo entre quem pode atender
+        pares = dois_mais_proximos([(c, agenda.livres(c, reservados)) for c in candidatos])
 
-        if not slots:
+        if not pares:
             contagem["sem_horario"] += 1
             grupo = zaia.chamar("ler_grupo", grupoId=GRUPO, limit=60)
             ja = any("SEM HORÁRIO DISPONÍVEL" in m.get("content", "") and lead["tel"] in m.get("content", "")
@@ -1060,11 +1130,12 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
             log("sem horário livre — avisado no grupo")
             continue
 
-        dois = manha_e_tarde(slots)
+        dois = [s for _, s in pares]
+        quem = " + ".join(dict.fromkeys(a["curto"] for a, _ in pares))
         lista = "; ".join(texto_slot(s) for s in dois)  # forma corrida, só para o aviso no grupo
-        oferta = texto_da_oferta(primeiro_nome(lead["nome"]), adv, dois)
+        oferta = texto_da_oferta_pares(primeiro_nome(lead["nome"]), pares)
         if DRY_RUN:
-            log(f"[simulação] ofereceria 2 horários ({adv['curto']})")
+            log(f"[simulação] ofereceria 2 horários ({quem})")
             print("    " + oferta)
         else:
             quando = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:00.000Z")
@@ -1075,9 +1146,9 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
                     f"🚨 *PRIORIDADE — VIOLÊNCIA DOMÉSTICA — {lead['nome']} ({lead['tel']})*\n"
                     f"Horários mais próximos da Dra. Fernanda oferecidos: {lista}.\n"
                     "👉 Equipe: acompanhar e, se houver risco imediato, contatar a cliente agora."))
-            log(f"oferta agendada ({adv['curto']})")
-        for s in dois:
-            reservados.add((adv["id"], s))
+            log(f"oferta agendada ({quem})")
+        for a, s in pares:
+            reservados.add((a["id"], s))
         contagem["ofertas"] += 1
 
 
@@ -1474,6 +1545,7 @@ def avisar_presenca(zaia, conversas, leads, grupo17, agora, contagem):
 
 _sugestao_gravar = set()
 RE_HORA_LIVRE = re.compile(r"\b(\d{1,2})\s*(?:h|hs|hrs|horas)\b|\b(\d{1,2})[:h](\d{2})\b", re.I)
+LIMITE_ACEITE = 200  # caso Rogério (04/11): relato longo em áudio com "beleza" no meio não é aceite
 RE_ACEITE = re.compile(r"\b(sim|ok|okay|pode ser|combinado|perfeito|fechado|beleza|blz|otimo|certo|"
                        r"confirmo|confirmado|pode marcar|esta otimo|ta otimo|pode)\b")
 
@@ -1489,12 +1561,13 @@ def sugerir_gravar(zaia, conv, lead, msgs, oferta, ofertados, grupo, contagem):
         return
     depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
     propostas = [m for m in depois if m.get("sender") in ("AGENT", "USER")
-                 and MARCA_OFERTA not in (m.get("content") or "") and RE_HORA_LIVRE.search(m.get("content") or "")]
+                 and MARCA_OFERTA not in (m.get("content") or "") and RE_HORA_LIVRE.search(m.get("content") or "")
+                 and not set(RE_SLOT.findall(m.get("content") or "")) & set(ofertados)]  # caso Rogério (04/11)
     if not propostas:
         return
     prop = propostas[-1]
     aceites = [m for m in depois if m.get("sender") == "CONTACT" and m["createdAt"] > prop["createdAt"]
-               and RE_ACEITE.search(sem_acento(m.get("content") or ""))]
+               and len(m.get("content") or "") <= LIMITE_ACEITE and RE_ACEITE.search(sem_acento(m.get("content") or ""))]
     if not aceites:
         return
     if datetime.now(timezone.utc) - ler_iso(aceites[-1]["createdAt"]) > timedelta(hours=6):
@@ -1649,8 +1722,14 @@ def outros_horarios(zaia, conversas, conv, lead, msgs, ofertas, agenda_fn, reser
         pedido = " ".join(m.get("content") or "" for m in do_lead)
         slots, atendeu = escolher_outros(agenda_fn().livres(adv, reservados_fn()), ja, pedido, agora)
         presencial = modo_da_conversa(msgs, inicio_do_ciclo(ofertas)) == "presencial"
-        colega = None
-        if not (slots and atendeu):
+        colega, pares = None, [(adv, s) for s in slots]
+        if escolher_outros([], set(), pedido, agora)[1]:  # pedido sem dia, data, turno ou hora
+            listas = [(adv, [s for s in agenda_fn().livres(adv, reservados_fn()) if s not in ja])]
+            listas += [(c, [s for s in agenda_fn().livres(c, reservados_fn()) if s not in ja])
+                       for c in colegas(adv, lead) if not (presencial and c.get("so_online"))]
+            pares = dois_mais_proximos(listas) or pares
+            slots, atendeu = [s for _, s in pares], True
+        elif not (slots and atendeu):
             # pedido da Dra. Danielle (03/11): sem o período pedido na agenda de quem ofertou, procura a do colega
             for c in colegas(adv, lead):
                 if presencial and c.get("so_online"):
@@ -1658,11 +1737,17 @@ def outros_horarios(zaia, conversas, conv, lead, msgs, ofertas, agenda_fn, reser
                 s2, ok2 = escolher_outros(agenda_fn().livres(c, reservados_fn()), ja, pedido, agora)
                 if s2 and (ok2 or not slots):
                     colega, slots, atendeu = c, s2, ok2
+                    pares = [(c, s) for s in s2]
                     break
+        if not colega and len({a["id"] for a, _ in pares}) == 1 and pares[0][0] is not adv:
+            colega = pares[0][0]
         if slots:
             _reofertas.add(chave)
             como = f"{MARCA_PRESENCIAL}, aqui no escritório," if presencial else "pode te atender por videochamada"
-            if colega:  # o texto não cita quem ofertou antes: o advogado da oferta é lido pelo nome no texto
+            if len({a["id"] for a, _ in pares}) > 1:
+                texto = (f"Sem problema, {primeiro_nome(nome)}! Nossa equipe {como} {MARCA_MAIS}. {MARCA_OFERTA}:\n\n"
+                         + "\n".join(item_da_oferta(s, a) for a, s in pares) + "\n\nQual fica melhor pra você?")
+            elif colega:  # o texto não cita quem ofertou antes: o advogado da oferta é lido pelo nome no texto
                 texto = (f"Sem problema, {primeiro_nome(nome)}! Nesse período {MARCA_COLEGA} é "
                          f"{colega['nome'][0].lower()}{colega['nome'][1:]}, que {como}. "
                          + ("" if atendeu else "No período exato que você pediu não há vaga, mas ")
@@ -1753,7 +1838,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
                 continue
             m_lead, slot = escolha
             inicio_esc = data_do_texto(*slot, agora)
-            adv_esc = advogado_do_texto(txt)
+            adv_esc = advogado_do_slot(txt, slot) or advogado_do_texto(txt)
             if inicio_esc > agora and not DRY_RUN and not ja_confirmado_ao_lead(msgs, m_lead, inicio_esc):
                 nome_lead = primeiro_nome(conv["contact"].get("name") or lead["nome"])
                 zaia.chamar("enviar_mensagem", assinatura="ia", numero=lead["tel"], texto=(
@@ -1771,8 +1856,9 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         if inicio < agora:
             continue
         corpo = sem_assinatura(ultima)
-        adv = advogado_do_texto(corpo) if any(n in corpo for n in ("Danielle", "Fernanda", "Lucas")) \
-            else advogado_do_texto(txt)
+        adv = advogado_do_slot(txt, conf[-1][1]) or (
+            advogado_do_texto(corpo) if any(n in corpo for n in ("Danielle", "Fernanda", "Lucas"))
+            else advogado_do_texto(txt))
         contato_id, conv_id = conv["contact"]["id"], conv["id"]
         nome = (conv["contact"].get("name") or lead["nome"]).strip()
         tel = lead["tel"]

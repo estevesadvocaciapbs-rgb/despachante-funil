@@ -460,7 +460,7 @@ import re as _re, io as _io
 for _arq in ("despachante.py", "secretaria.py", "retorno.py", "porteiro.py"):
     _src = _io.open(_arq, encoding="utf-8").read()
     _sem = [l for l in _src.splitlines()
-            if _re.search(r'"enviar_mensagem(_grupo)?"', l) and "assinatura=" not in l]
+            if _re.search(r'chamar\("enviar_mensagem(_grupo)?"', l) and "assinatura=" not in l]
     assert not _sem, (_arq, _sem)
 print("OK — todo enviar_mensagem e enviar_mensagem_grupo leva assinatura")
 
@@ -862,15 +862,32 @@ class AgDias(AgPor):
 
 _dd = [date(2026, 11, 4), date(2026, 11, 5), date(2026, 11, 9)]
 _h = lambda dia, hh, mm=0: datetime(2026, 11, dia, hh, mm, tzinfo=d.BRT)
-_ag = AgDias({d.DANIELLE["id"]: [_h(4, 14, 30)], d.LUCAS["id"]: [_h(4, 10, 30)]}, _dd)
-assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set())[0] is d.DANIELLE  # ela tem vaga no próximo dia útil
-_ag = AgDias({d.DANIELLE["id"]: [_h(9, 10, 30)], d.LUCAS["id"]: [_h(5, 14, 0)]}, _dd)
-assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set()) == (d.LUCAS, [_h(5, 14, 0)])
-_ag = AgDias({d.DANIELLE["id"]: [_h(5, 14, 30)], d.LUCAS["id"]: [_h(5, 14, 30)]}, _dd)
-assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set())[0] is d.DANIELLE  # empate fica com ela
-_ag = AgDias({d.DANIELLE["id"]: [], d.LUCAS["id"]: []}, _dd)
-assert d.escolher_advogado(_ag, [d.DANIELLE, d.LUCAS], set()) == (None, [])
-print("OK — primeira oferta: sem vaga da Dra. Danielle no próximo dia útil, vai quem tiver o horário mais próximo")
+D, L = d.DANIELLE, d.LUCAS
+# ela tem os dois turnos no próximo dia útil: os dois horários são dela
+assert d.dois_mais_proximos([(D, [_h(4, 10, 30), _h(4, 14, 30)]), (L, [_h(4, 10, 30), _h(4, 11, 0)])]) == \
+    [(D, _h(4, 10, 30)), (D, _h(4, 14, 30))]
+# caso de 04/11: a manhã dela só na semana seguinte; a manhã sai do Dr. Lucas no dia mais próximo
+assert d.dois_mais_proximos([(D, [_h(4, 14, 30), _h(4, 15, 30), _h(9, 10, 30)]), (L, [_h(4, 11, 0), _h(4, 14, 0)])]) == \
+    [(L, _h(4, 11, 0)), (D, _h(4, 14, 30))]
+# só ela, sem manhã por perto: o 2º horário é o livre mais próximo, não a manhã da semana seguinte
+assert d.dois_mais_proximos([(D, [_h(4, 14, 30), _h(4, 15, 30), _h(9, 10, 30)])]) == [(D, _h(4, 14, 30)), (D, _h(4, 15, 30))]
+# manhã no dia útil seguinte ainda vale (dia seguinte com vaga)
+assert d.dois_mais_proximos([(D, [_h(4, 14, 30), _h(5, 10, 30)])]) == [(D, _h(4, 14, 30)), (D, _h(5, 10, 30))]
+# ela sem nada: tudo do Dr. Lucas; ninguém com vaga: nada
+assert d.dois_mais_proximos([(D, []), (L, [_h(5, 10, 30), _h(5, 14, 0)])]) == [(L, _h(5, 10, 30)), (L, _h(5, 14, 0))]
+assert d.dois_mais_proximos([(D, []), (L, [])]) == []
+# texto misto: cada horário diz com quem é, e a leitura volta o advogado certo de cada um
+_mix = d.texto_da_oferta_pares("Ana", [(L, _h(4, 11, 0)), (D, _h(4, 14, 30))])
+assert "04/11 às 11:00 com o Dr. Lucas" in _mix and "04/11 às 14:30 com a Dra. Danielle" in _mix and d.MARCA_OFERTA in _mix
+assert d.advogado_do_slot(_mix, ("04", "11", "11", "00")) is L and d.advogado_do_slot(_mix, ("04", "11", "14", "30")) is D
+assert d.advogado_do_slot(d.texto_da_oferta("Ana", D, [_h(4, 14, 30)]), ("04", "11", "14", "30")) is None
+_rm = d.reservas_recentes([{"content": "*Annie*:\n" + _mix, "scheduledAt": "2026-11-03T21:00:00.000Z"}],
+                          datetime(2026, 11, 3, 19, 0, tzinfo=d.BRT))
+assert _rm == {(L["id"], _h(4, 11, 0)), (D["id"], _h(4, 14, 30))}, _rm
+# todos do mesmo advogado: texto de sempre
+assert d.texto_da_oferta_pares("Ana", [(D, _h(4, 10, 30)), (D, _h(4, 14, 30))]) == \
+    d.texto_da_oferta("Ana", D, [_h(4, 10, 30), _h(4, 14, 30)])
+print("OK — os 2 horários da oferta são os mais próximos entre a Dra. Danielle e o Dr. Lucas (pedido de 04/11)")
 
 # relato longo do caso depois da oferta não é pedido de horário (caso Francinildo, 27/10)
 _relato = ("Essa questão aí que você falou, eu entrava cedo e não tinha hora para ir almoçar, porque eu não batia "
@@ -896,3 +913,35 @@ assert "22/10 às 11:00" in _r[0] and "10:30" not in _r[0] and "Danielle" not in
 # pedido presencial não passa para o Dr. Lucas (só online)
 assert d.colegas(d.FERNANDA, _leadX) == [] and d.colegas(d.DANIELLE, _leadX) == [d.LUCAS]
 print("OK — lead pede período sem vaga da Dra. Danielle: oferta do Dr. Lucas no mesmo período")
+
+# "outro horário" sem dia/turno/hora: os 2 novos horários também juntam as agendas (pedido de 04/11)
+_oY = _m("USER", "*Annie*:\n" + d.texto_da_oferta("Ana", d.DANIELLE, [_d1, _d2]), "2026-10-21T12:00:00.000Z")
+_pY = _m("CONTACT", "não posso nesses horários, tem outro?", "2026-10-21T12:02:00.000Z")
+_agY = AgPor({d.DANIELLE["id"]: [datetime(2026, 10, 22, 15, 30, tzinfo=d.BRT), datetime(2026, 10, 27, 10, 30, tzinfo=d.BRT)],
+              d.LUCAS["id"]: [datetime(2026, 10, 22, 11, 0, tzinfo=d.BRT), datetime(2026, 10, 22, 14, 0, tzinfo=d.BRT)]})
+d._reofertas.clear(); d._avisos_advogado.clear()
+_z = ZP()
+d.outros_horarios(_z, ConvL({}), _convX, _leadX, [_oY, _pY], [_oY], lambda: _agY, set, _tA + _td2(minutes=1), {})
+_r = [a["mensagem"] for f, a in _z.env if f == "agendar_mensagem"]
+assert len(_r) == 1 and d.MARCA_MAIS in _r[0], _r
+assert "22/10 às 11:00 com o Dr. Lucas" in _r[0] and "22/10 às 15:30 com a Dra. Danielle" in _r[0] and "27/10" not in _r[0], _r
+print("OK — outro horário sem período: horários mais próximos de quem pode atender, com o nome de cada um")
+
+# dia da semana errado ao lado da data é corrigido antes de sair (caso de 03/11)
+from datetime import date as _date
+assert d.dia_da_semana_certo("• quarta-feira, 05/11 às 10:30", _date(2026, 11, 3)) == "• quinta-feira, 05/11 às 10:30"
+assert d.dia_da_semana_certo("Quarta, dia 05/11", _date(2026, 11, 3)) == "Quinta, dia 05/11"
+assert d.dia_da_semana_certo("• quarta-feira, 04/11 às 16:30", _date(2026, 11, 3)) == "• quarta-feira, 04/11 às 16:30"
+assert d.dia_da_semana_certo("terca-feira, 10/11", _date(2026, 11, 3)) == "terca-feira, 10/11"
+print("OK — dia da semana confere com a data")
+
+# a Annie repetindo os horários da oferta + relato longo com "beleza" não vira horário combinado (caso de 04/11)
+_ofR = {"sender": "USER", "createdAt": _iso(300), "content": "*Annie*:\nOlá, Ana! Tenho estes horários:\n\n• quarta-feira, 04/11 às 14:30\n• quarta-feira, 11/11 às 10:30\n\nQual fica melhor pra você?"}
+_histR = [_ofR,
+          {"sender": "AGENT", "createdAt": _iso(290), "content": "*Annie*:\nQual desses horários fica melhor pra você?\n\n• quarta-feira, 04/11 às 14:30\n• quarta-feira, 11/11 às 10:30"},
+          {"sender": "CONTACT", "createdAt": _iso(30), "content": "Eu trabalho muito, não tenho folga, beleza, mas tá bom. " * 6}]
+z = ZG(); d._sugestao_gravar.clear()
+d.sugerir_gravar(z, {"contact": {"name": "Ana"}}, {"tel": "5594900000051", "nome": "Ana"}, _histR, _ofR,
+                 set(d.RE_SLOT.findall(_ofR["content"])), {"mensagens": []}, {})
+assert not z.env, z.env
+print("OK — repetição da oferta e relato longo não sugerem GRAVAR")
