@@ -2223,6 +2223,11 @@ def main():
         tarefas_limpas.rodada(zaia, tarefas, contagem, log, DRY_RUN)
     except Exception as erro:
         log(f"limpeza das tarefas falhou: {type(erro).__name__}")
+    try:  # conversa de cliente da Dra. Fernanda no nome dela, para ela ver no celular (04/11)
+        import responsavel_conversa
+        responsavel_conversa.rodada(zaia, contagem, log, DRY_RUN)
+    except Exception as erro:
+        log(f"atribuição de conversa falhou: {type(erro).__name__}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
     except OrcamentoEasyJur as erro:
