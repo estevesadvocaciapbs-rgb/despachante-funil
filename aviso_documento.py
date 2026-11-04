@@ -71,7 +71,7 @@ def ja_avisado(zaia, adv, tel, ultimo, d):
     conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=adv["tel"]) or {}).get("conversa")
     if not conv:
         return False
-    msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"], limit=30) or {}).get("messages", [])
+    msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
     marca = f"(último às {ultimo})"
     return any(MARCA in (m.get("content") or "") and tel in (m.get("content") or "") and marca in (m.get("content") or "")
                for m in msgs)
@@ -101,7 +101,7 @@ def rodada(zaia, agora, contagem, d, tarefas):
         if not adv:
             _vistos[conv["id"]] = chave
             continue
-        msgs = sorted((zaia.chamar("ler_conversa", conversaId=conv["id"], limit=60) or {}).get("messages", []),
+        msgs = sorted((zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []),
                       key=lambda m: m["createdAt"])
         novos = arquivos_novos(msgs, conv["id"], agora, d)
         if not novos:
