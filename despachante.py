@@ -2228,6 +2228,11 @@ def main():
         responsavel_conversa.rodada(zaia, contagem, log, DRY_RUN)
     except Exception as erro:
         log(f"atribuição de conversa falhou: {type(erro).__name__}")
+    try:  # cliente mandou documento: aviso no privado da advogada (caso Wellington, 04/11)
+        import aviso_documento
+        aviso_documento.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], tarefas)
+    except Exception as erro:
+        log(f"aviso de documento falhou: {type(erro).__name__}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
     except OrcamentoEasyJur as erro:
