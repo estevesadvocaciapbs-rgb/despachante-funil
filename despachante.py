@@ -2302,6 +2302,11 @@ def main():
         responsavel_conversa.rodada(zaia, contagem, log, DRY_RUN)
     except Exception as erro:
         log(f"atribuição de conversa falhou: {type(erro).__name__}")
+    try:  # conversa resolvida (Finalizado ou cliente encerrou): fecha e tira a etiqueta de pendência (05/11)
+        import faxina
+        faxina.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], pendentes, tarefas)
+    except Exception as erro:
+        log(f"faxina das conversas falhou: {type(erro).__name__}")
     try:  # cliente mandou documento: aviso no privado da advogada (caso Wellington, 04/11)
         import aviso_documento
         aviso_documento.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], tarefas)
