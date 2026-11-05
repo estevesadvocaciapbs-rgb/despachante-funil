@@ -324,6 +324,62 @@ def enviar_ao_cliente(zaia, tel, assinatura, texto):
         raise
 
 
+# Autocorreção (05/11): quando a Za.Ia demora a confirmar o envio ao cliente, o próprio despachante confere na conversa
+# do cliente se a mensagem chegou e avisa o advogado com ✅. Nunca reenvia sozinho (regra da usuária: o reenvio após
+# timeout fez a mensagem chegar 3 vezes, caso Júnior 22/10); só se não aparecer em 15 min o advogado recebe ⚠️.
+CONFERIR_APOS = timedelta(minutes=3)
+DESISTIR_APOS = timedelta(minutes=15)
+
+
+def chegou_ao_cliente(zaia, tel, texto, desde):
+    conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=tel) or {}).get("conversa")
+    if not conv:
+        return False
+    trecho = norm(texto)[:60]
+    for m in (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []):
+        if (m.get("sender") != "CONTACT" and trecho and trecho in norm(m.get("content"))
+                and ler_iso(m["createdAt"]) >= desde - timedelta(minutes=1)):
+            return True
+    return False
+
+
+def conferir_depois(tel, assinatura, texto, adv_tel, rotulo, agora):
+    _estado.setdefault("a_conferir", []).append({"tel": tel, "assinatura": assinatura, "texto": texto,
+                                                 "adv_tel": adv_tel, "rotulo": rotulo, "desde": agora})
+
+
+def conferir_envios(zaia, agora):
+    """Roda a cada volta: confirma as mensagens a clientes que deram timeout (nunca reenvia)."""
+    pend = _estado.get("a_conferir") or []
+    resta = []
+    for e in pend:
+        idade = agora - e["desde"]
+        if idade < CONFERIR_APOS:
+            resta.append(e)
+            continue
+        try:
+            chegou = chegou_ao_cliente(zaia, e["tel"], e["texto"], e["desde"])
+        except Exception as erro:
+            _log(f"conferência de envio falhou: {type(erro).__name__}")
+            resta.append(e)
+            continue
+        aviso = None
+        if chegou:
+            aviso = f"✅ Confirmado: {e['rotulo']} chegou ao cliente."
+        elif idade >= DESISTIR_APOS:
+            aviso = (f"⚠️ {e['rotulo']}: a mensagem não apareceu na conversa do cliente em 15 minutos. Não reenviei "
+                     "para não duplicar. 👉 Confira no painel da Za.Ia e, se não chegou, mande por lá.")
+        else:
+            resta.append(e)
+            continue
+        try:
+            zaia.chamar("enviar_mensagem", assinatura="ia", numero=e["adv_tel"], texto=aviso)
+        except Exception as erro:
+            _log(f"aviso da conferência não enviado: {type(erro).__name__}")
+            resta.append(e)
+    _estado["a_conferir"] = resta
+
+
 class Execucao:
     """Executa os comandos de uma advogada e junta as linhas de resposta."""
 
@@ -527,9 +583,12 @@ class Execucao:
             return
         ok = enviar_ao_cliente(self.zaia, r["tel"], self.adv["assinatura"], texto)
         self.enviados.add(num)
+        if not ok:
+            conferir_depois(r["tel"], self.adv["assinatura"], texto, self.adv["tel"],
+                            f"a mensagem do item {num} ({r['nome']})", datetime.now(timezone.utc))
         self.linhas.append(f"✅ Cliente avisado: item {num} — {r['nome']}" if ok else
-                           f"⏳ Cliente avisado: item {num} — {r['nome']} (a Za.Ia demorou a confirmar; a mensagem costuma "
-                           f"chegar mesmo assim — confira na conversa antes de pedir de novo)")
+                           f"⏳ Cliente avisado: item {num} — {r['nome']} (a Za.Ia demorou a confirmar; eu confiro "
+                           f"sozinho na conversa do cliente e te aviso — não precisa pedir de novo)")
 
     def cliente(self, resto):
         r = norm(resto)
@@ -746,13 +805,16 @@ def aprovacoes_lucas(zaia, msgs, agora, contagem, enviar=True):
                 continue
             if enviar:
                 ok = enviar_ao_cliente(zaia, it["tel"], DR_LUCAS["assinatura"], texto)
+                if not ok:
+                    conferir_depois(it["tel"], DR_LUCAS["assinatura"], texto, DR_LUCAS["tel"],
+                                    f"a mensagem do item {num} ({it['nome']})", datetime.now(timezone.utc))
                 try:
                     tirar_etiqueta(zaia, it["tel"], DR_LUCAS["etiqueta"])
                 except Exception as erro:  # etiqueta não pode impedir a confirmação
                     _log(f"etiqueta não retirada: {type(erro).__name__}")
             linhas.append(f"✅ Enviado para {it['nome']} (item {num})" if not enviar or ok else
-                          f"⏳ Enviado para {it['nome']} (item {num}) — a Za.Ia demorou a confirmar; confira na conversa "
-                          f"antes de pedir de novo")
+                          f"⏳ Enviado para {it['nome']} (item {num}) — a Za.Ia demorou a confirmar; eu confiro "
+                          f"sozinho na conversa do cliente e te aviso")
             contagem["respostas_lucas"] = contagem.get("respostas_lucas", 0) + 1
         if linhas:
             zaia.chamar("enviar_mensagem", assinatura="ia", numero=DR_LUCAS["tel"], texto="\n".join(linhas) + f"\n_{marca(m)}_")
@@ -768,6 +830,10 @@ def rodada(zaia, ej_fn, agora=None, contagem=None):
     if _estado["ultima"] and agora - _estado["ultima"] < INTERVALO:
         return lidas
     _estado["ultima"] = agora
+    try:
+        conferir_envios(zaia, agora)
+    except Exception as erro:
+        _log(f"conferência de envios falhou: {type(erro).__name__}")
     for adv, tarefa in [(a, "resumo") for a in ADVOGADAS_RESUMO] + [(DR_LUCAS, "lucas")]:
         try:
             conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=adv["tel"]) or {}).get("conversa")

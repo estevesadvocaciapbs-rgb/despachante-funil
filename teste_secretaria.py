@@ -419,3 +419,35 @@ assert len(z.envios) == 1  # um envio só: nada de reenviar quando a Za.Ia demor
 fonte = open("secretaria.py", encoding="utf-8").read()
 assert 'assinatura="ia", numero=r["tel"]' not in fonte and 'assinatura="ia", numero=it["tel"]' not in fonte
 print("OK — mensagem ao cliente sai só com a assinatura do advogado e não é reenviada no timeout")
+
+# ---- 05/11: timeout no envio ao cliente: confere sozinho, reenvia uma vez depois de 15 min, só então avisa
+from datetime import datetime as _D, timedelta as _T, timezone as _TZ
+class _ZC:
+    def __init__(s, aparece): s.env, s.aparece = [], aparece
+    def chamar(s, f, **a):
+        s.env.append((f, a))
+        if f == "buscar_conversa_por_telefone":
+            return {"conversa": {"id": "cv"}}
+        if f == "ler_conversa":
+            return {"messages": [{"sender": "USER", "content": "*Dr. Lucas*\nSeu processo foi distribuído.",
+                                  "createdAt": "2026-11-05T15:01:00.000Z"}] if s.aparece else []}
+        return {}
+_t0 = _D(2026, 11, 5, 15, 0, tzinfo=_TZ.utc)
+s._estado["a_conferir"] = []
+s.conferir_depois("5594900000099", "*Dr. Lucas*", "Seu processo foi distribuído.", "5594900000001", "a mensagem do item 3 (Teste)", _t0)
+_z = _ZC(True)
+s.conferir_envios(_z, _t0 + _T(minutes=1))
+assert not _z.env  # cedo demais
+s.conferir_envios(_z, _t0 + _T(minutes=4))
+assert [a["texto"] for f, a in _z.env if f == "enviar_mensagem"] == ["✅ Confirmado: a mensagem do item 3 (Teste) chegou ao cliente."]
+assert s._estado["a_conferir"] == []
+# não apareceu: não reenvia nunca; aos 15 min avisa o advogado
+s.conferir_depois("5594900000099", "*Dr. Lucas*", "Seu processo foi distribuído.", "5594900000001", "a mensagem do item 4 (Teste)", _t0)
+_z = _ZC(False)
+s.conferir_envios(_z, _t0 + _T(minutes=4))
+assert not [1 for f, a in _z.env if f == "enviar_mensagem"]
+s.conferir_envios(_z, _t0 + _T(minutes=16))
+_env = [a for f, a in _z.env if f == "enviar_mensagem"]
+assert len(_env) == 1 and _env[0]["numero"] == "5594900000001" and _env[0]["texto"].startswith("⚠️"), _env
+assert s._estado["a_conferir"] == []
+print("OK — timeout no envio ao cliente: confere sozinho e avisa ✅; sem reenvio")
