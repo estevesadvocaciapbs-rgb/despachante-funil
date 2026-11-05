@@ -1934,6 +1934,24 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
             if avisado or tel in _conflitos_avisados:
                 continue  # avisa uma vez só
             _conflitos_avisados.add(tel)
+            # Autocorreção (05/11): o horário foi ocupado depois da oferta: o próprio despachante pede desculpas e
+            # manda outros 2 horários do mesmo advogado (online). Só avisa a equipe se não houver vaga ou for presencial.
+            if modo != "presencial" and MARCA_ESPECIAL not in txt:
+                ja = ofertados_no_ciclo(msgs, ofertas, agora)
+                novos = manha_e_tarde([s for s in agenda.livres(adv, reservas_recentes(
+                    [x for l in leads for x in conversas.de(l["tel"])[1]], agora)) if s not in ja and s != inicio])
+                if novos:
+                    if not DRY_RUN:
+                        quando = (datetime.now(timezone.utc) + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:00.000Z")
+                        zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id, assinatura="ia",
+                                    ativarIaAoResponder=True, dataHora=quando, mensagem=(
+                                        f"{primeiro_nome(nome)}, me desculpe! O horário de {texto_slot(inicio)} acabou de "
+                                        f"ser ocupado na agenda d{adv['nome'][0].lower()}{adv['nome'][1:]}. "
+                                        f"{MARCA_OFERTA} para a sua videochamada:\n\n"
+                                        + "\n".join(item_da_oferta(x) for x in novos) + "\n\nQual fica melhor pra você?"))
+                    contagem["conflitos"] += 1
+                    log("conflito de agenda — outros 2 horários oferecidos ao lead (sem aviso à equipe)")
+                    continue
             if not DRY_RUN:
                 zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO, texto=(
                     f"⚠️ *CONFLITO DE AGENDA — {nome} ({tel})*\nEscolheu {texto_slot(inicio)} com "

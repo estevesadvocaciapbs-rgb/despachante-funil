@@ -1011,3 +1011,20 @@ assert not d.gravar_reuniao(_zf2, _EJ422(), _conv, "Teste 422", "5594900000066",
                             datetime(2026, 10, 21, 9, 0, tzinfo=d.BRT), {"reunioes": 0}, _ch6, "teste")
 assert _ch6 in d._falhas
 print("OK — queda de conexão na gravação tenta de novo sem avisar e sem duplicar; erro 422 avisa")
+
+# ---- 05/11: conflito REAL (o horário escolhido foi ocupado depois da oferta): o lead recebe outros 2 horários sozinho
+_ocup14 = {"tipo": "AUDIENCIA", "status": "P", "data": "2026-10-22", "hora_inicio": "13:30:00", "hora_fim": "15:00:00"}
+_n1, _n2 = datetime(2026, 10, 23, 10, 30, tzinfo=d.BRT), datetime(2026, 10, 23, 15, 30, tzinfo=d.BRT)
+_ce2 = _m("AGENT", "*Annie*:\nPerfeito, Júnior! Seu atendimento com a Dra. Fernanda ficou marcado para quinta-feira, "
+                   "22/10, às 14h00, por videochamada.", "2026-10-21T12:05:00.000Z")
+d._gravadas.clear(); d._falhas.clear(); d._conflitos_avisados.clear()
+_z7, _ej7 = ZP(), EJG()
+d.confirmar(_z7, ConvF(_conv, [_o, _m("CONTACT", "14h", "2026-10-21T12:04:00.000Z"), _ce2]), lambda: _ej7,
+            lambda: AgLivre([_d1, _n1, _n2], [_ocup14]), [_leadA], [], datetime(2026, 10, 21, 12, 10, tzinfo=_tz2.utc),
+            {"reunioes": 0, "conflitos": 0})
+_re7 = [a["mensagem"] for f, a in _z7.env if f == "agendar_mensagem"]
+assert len(_re7) == 1 and "me desculpe" in _re7[0] and d.MARCA_OFERTA in _re7[0] and "23/10 às 10:30" in _re7[0], _re7
+assert "22/10 às 10:30" not in _re7[0]  # horário já ofertado não volta
+assert not [a for f, a in _z7.env if f == "enviar_mensagem_grupo" and "CONFLITO" in a["texto"]]
+assert not [a for f, a in _ej7.env if f == "create_agenda"]
+print("OK — conflito real de agenda: o lead recebe outros 2 horários, sem aviso à equipe")
