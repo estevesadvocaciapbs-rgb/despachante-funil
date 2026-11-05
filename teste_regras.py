@@ -945,3 +945,21 @@ d.sugerir_gravar(z, {"contact": {"name": "Ana"}}, {"tel": "5594900000051", "nome
                  set(d.RE_SLOT.findall(_ofR["content"])), {"mensagens": []}, {})
 assert not z.env, z.env
 print("OK — repetição da oferta e relato longo não sugerem GRAVAR")
+
+# a Annie repete só as horas ("14h30 ou 15h30?", sem a data) e o lead escolhe: não é horário fora da oferta (caso de 05/11)
+_ofC = {"sender": "USER", "createdAt": _iso(300), "content": "*Annie*:\nOlá, Bia! Tenho estes horários:\n\n• segunda-feira, 09/11 às 14:30\n• segunda-feira, 09/11 às 15:30\n\nQual fica melhor pra você?"}
+_histC = [_ofC,
+          {"sender": "AGENT", "createdAt": _iso(60), "content": "*Annie*:\nPerfeito! Você prefere 14h30 ou 15h30?"},
+          {"sender": "CONTACT", "createdAt": _iso(30), "content": "Pode ser 15:30"}]
+z = ZG(); d._sugestao_gravar.clear()
+d.sugerir_gravar(z, {"contact": {"name": "Bia"}}, {"tel": "5594900000052", "nome": "Bia"}, _histC, _ofC,
+                 set(d.RE_SLOT.findall(_ofC["content"])), {"mensagens": []}, {})
+assert not z.env, z.env
+# hora de fato fora da oferta continua gerando a sugestão de GRAVAR
+_histC[1] = {"sender": "AGENT", "createdAt": _iso(60), "content": "*Annie*:\nConsegue hoje às 16h30?"}
+_histC[2] = {"sender": "CONTACT", "createdAt": _iso(30), "content": "Sim, pode ser"}
+z = ZG(); d._sugestao_gravar.clear()
+d.sugerir_gravar(z, {"contact": {"name": "Bia"}}, {"tel": "5594900000052", "nome": "Bia"}, _histC, _ofC,
+                 set(d.RE_SLOT.findall(_ofC["content"])), {"mensagens": []}, {})
+assert z.env and "FORA DA OFERTA" in str(z.env), z.env
+print("OK — horas da oferta repetidas sem data não viram 'fora da oferta'; hora nova continua avisando")

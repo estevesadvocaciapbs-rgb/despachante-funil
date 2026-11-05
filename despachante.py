@@ -1550,6 +1550,17 @@ RE_ACEITE = re.compile(r"\b(sim|ok|okay|pode ser|combinado|perfeito|fechado|bele
                        r"confirmo|confirmado|pode marcar|esta otimo|ta otimo|pode)\b")
 
 
+def so_horas_da_oferta(texto, ofertados):
+    """True se todas as horas citadas são horas da oferta (e as datas citadas, datas da oferta).
+
+    Caso de 05/11: a Annie repetiu a pergunta "14h30 ou 15h30?" sem a data; não é horário fora da oferta."""
+    horas = {(int(a), "00") if a else (int(b), c) for a, b, c in RE_HORA_LIVRE.findall(texto)}
+    if not horas or not horas <= {(int(o[2]), o[3]) for o in ofertados}:
+        return False
+    datas = {(int(d), int(m)) for d, m in re.findall(r"\b(\d{1,2})/(\d{1,2})\b", texto)}
+    return datas <= {(int(o[0]), int(o[1])) for o in ofertados}
+
+
 def sugerir_gravar(zaia, conv, lead, msgs, oferta, ofertados, grupo, contagem):
     """A equipe propôs ao lead um horário fora da oferta e ele aceitou: sugere no grupo o comando GRAVAR.
 
@@ -1562,7 +1573,8 @@ def sugerir_gravar(zaia, conv, lead, msgs, oferta, ofertados, grupo, contagem):
     depois = [m for m in msgs if m["createdAt"] > oferta["createdAt"]]
     propostas = [m for m in depois if m.get("sender") in ("AGENT", "USER")
                  and MARCA_OFERTA not in (m.get("content") or "") and RE_HORA_LIVRE.search(m.get("content") or "")
-                 and not set(RE_SLOT.findall(m.get("content") or "")) & set(ofertados)]  # caso Rogério (04/11)
+                 and not set(RE_SLOT.findall(m.get("content") or "")) & set(ofertados)  # caso Rogério (04/11)
+                 and not so_horas_da_oferta(m.get("content") or "", ofertados)]
     if not propostas:
         return
     prop = propostas[-1]
