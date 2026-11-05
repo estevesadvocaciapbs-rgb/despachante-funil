@@ -180,7 +180,12 @@ assert "entra no próximo lançamento automático" in itens["F5 de 21/10"]  # ap
 assert "Dr. Lucas Seoane" in itens["F6 de 21/10"]  # favorecido no meio da linha dos "Dados finais"
 # no dia seguinte, sem 🧾, vira alerta de atraso
 amanha = dict(p.pendencias_financeiro(GRUPO18, _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc)))
-assert "já devia ter entrado" in amanha["F5 de 21/10"]
+assert "já devia ter entrado" in amanha["F5 de 21/10"] and "computador do escritório" in amanha["F5 de 21/10"]
+# 05/11: o robô já avisou o motivo (ou deu sinal nas últimas 24 h): a lista não repete
+_rob = [mg("AGENT", "*Annie*:\n🤖 *Robô do EasyJur*\n⚠️ F5 de 21/10 NÃO lançada pelo robô — x", "2026-10-22T12:00:00.000Z")]
+assert "F5 de 21/10" not in dict(p.pendencias_financeiro(GRUPO18 + _rob, _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc)))
+_rob2 = [mg("AGENT", "*Annie*:\n🤖 *Robô do EasyJur*\n🧾 F9 de 22/10 lançada", "2026-10-23T10:00:00.000Z")]
+assert "F5 de 21/10" not in dict(p.pendencias_financeiro(GRUPO18 + _rob2, _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc)))
 # 🧾 e EDITAR do advogado tiram da lista
 resolvido = GRUPO18 + [mg("AGENT", "*Annie*:\n🧾 F4 de 21/10 lançada no EasyJur\n🧾 F5 de 21/10 — já existia\n🧾 F6 de 21/10 — idem",
                           "2026-10-22T13:00:00.000Z")]

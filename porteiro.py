@@ -248,6 +248,9 @@ def _quem(texto):
     return m.group(1).strip(" *") if m else ""
 
 
+ROBO_SEM_SINAL = timedelta(hours=24)
+
+
 def pendencias_financeiro(msgs, agora):
     """[(chave, linha)] do que está parado no financeiro: despesa aprovada que nenhum lançamento das 22h
     confirmou (sem "🧾") e rascunho F sem resposta de advogado nem decisão (✅/⏭️/🧾) há mais de 2 h."""
@@ -268,7 +271,18 @@ def pendencias_financeiro(msgs, agora):
             continue
         quem = _quem(m.get("content") or "")
         if ler_iso(m["createdAt"]) < ultimas_22h:
-            estado = "⚠️ aprovada e *ainda não lançada* no EasyJur (já devia ter entrado no lançamento da noite)"
+            # Autocorreção (05/11): o robô do EasyJur tenta de hora em hora e, se não conseguir em 3 rodadas,
+            # avisa aqui o motivo. Repetir na lista só seria ruído; o porteiro só fala se o robô sumiu
+            # (sem sinal há 1 dia: PC do escritório desligado ou sem internet).
+            if any(f"⚠️ {chave} NÃO lançada" in (x.get("content") or "") for x in msgs):
+                continue
+            if agora - ler_iso(m["createdAt"]) < ROBO_SEM_SINAL:
+                continue
+            if any("Robô do EasyJur" in (x.get("content") or "") and agora - ler_iso(x["createdAt"]) < ROBO_SEM_SINAL
+                   for x in msgs):
+                continue
+            estado = ("⚠️ aprovada e *ainda não lançada* (já devia ter entrado) e o robô do EasyJur não deu sinal "
+                      "há 1 dia → 👉 confira se o computador do escritório está ligado e com internet")
         else:
             estado = "aprovada, *ainda não lançada*: entra no próximo lançamento automático (8h30)"
         itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}"))
