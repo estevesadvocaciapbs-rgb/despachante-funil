@@ -159,6 +159,8 @@ def avisar_lucas(zaia, texto):
 def _avisar_orcamento(zaia, erro):
     """Avisa o Dr. Lucas uma vez por plantão que o EasyJur ficou fora do alcance do despachante."""
     log(f"EasyJur indisponível para o despachante: {erro}")
+    if "cota mensal" not in str(erro):
+        return  # limite por hora ou por plantão: volta sozinho, sem incomodar ninguém (05/11)
     if ESTADO_EJ["avisado"] or DRY_RUN:
         return
     ESTADO_EJ["avisado"] = True
@@ -1192,7 +1194,7 @@ def lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link="", modo
 
 
 def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendentes, agora, contagem, chave,
-                   origem, marca="", modo="online"):
+                   origem, marca="", modo="online", nova_tentativa=True):
     """Grava pessoa, oportunidade e ATENDIMENTO no EasyJur, agenda os lembretes e avisa o grupo.
 
     modo "presencial": local "Presencial — escritório", e nenhum link vai ao cliente (o evento do Google
@@ -1203,14 +1205,16 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
     rotulo = "Presencial (escritório)" if presencial else "Online"
     fim = inicio + timedelta(minutes=DURACAO_MIN)
     google, link, aviso_google = None, "", "Google Agenda: ponte não configurada (o auditor cria o evento)"
+    feito = _parciais.setdefault(chave, {})  # o que já foi gravado numa tentativa anterior (não duplica)
     try:
         import agenda_google
-        google = agenda_google.criar_reuniao(
+        google = feito.get("google") or agenda_google.criar_reuniao(
             f"Reunião {'PRESENCIAL ' if presencial else ''}{adv['curto'].replace(' Esteves', '').replace(' Mesquita', '')}"
             f" — {nome}", nome, inicio, fim,
             ("ATENDIMENTO PRESENCIAL no escritório. " if presencial else "") + f"Lead: {nome} ({tel}). {resumo}",
             email_do_advogado(zaia, adv))
         if google:
+            feito["google"] = google
             link = google.get("link") or ""
             aviso_google = ("Google Agenda: evento criado" + (" · sala aberta (entra sem pedir permissão)"
                             if google.get("aberta") else " · sala com controle de entrada padrão do Meet"))
@@ -1218,19 +1222,25 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
         log(f"Google Agenda falhou: {type(erro).__name__}: {erro}")
         aviso_google = "Google Agenda: falhou (o auditor tenta de novo)"
     try:
-        pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
-        mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
-                 and re.sub(r"\D", "", p.get("celular") or "") in ("", tel, tel[2:])]
-        if len(mesma) == 1:
-            pessoa_id = mesma[0]["id"]
-        else:
-            # O EasyJur recusa (HTTP 422) o celular cru "5594991234567"; aceita "(94) 99123-4567".
-            pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F",
-                                        celular=celular_br(tel), tipos=["lead"]))
-        oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
-                          status="1", responsavel=adv["id"], cliente=pessoa_id,
-                          data_atendimento=inicio.date().isoformat(), descricao=resumo)
-        oport_id = id_de(oport)
+        pessoa_id = feito.get("pessoa")
+        if not pessoa_id:
+            pessoas = ej.chamar("list_pessoas", nome=nome, page_size=20).get("data", [])
+            mesma = [p for p in pessoas if (p.get("nome") or "").strip().lower() == nome.lower()
+                     and re.sub(r"\D", "", p.get("celular") or "") in ("", tel, tel[2:])]
+            if len(mesma) == 1:
+                pessoa_id = mesma[0]["id"]
+            else:
+                # O EasyJur recusa (HTTP 422) o celular cru "5594991234567"; aceita "(94) 99123-4567".
+                pessoa_id = id_de(ej.chamar("create_pessoa", nome=nome, fisica_juridica="F",
+                                            celular=celular_br(tel), tipos=["lead"]))
+            feito["pessoa"] = pessoa_id
+        oport_id = feito.get("oport")
+        if not oport_id:
+            oport = ej.chamar("create_oportunidade", nome=f"{NOME_AREA.get(area, 'Atendimento')} — {nome}"[:100],
+                              status="1", responsavel=adv["id"], cliente=pessoa_id,
+                              data_atendimento=inicio.date().isoformat(), descricao=resumo)
+            oport_id = id_de(oport)
+            feito["oport"] = oport_id
         ej.chamar("create_agenda", tipo="ATENDIMENTO", id_advogado=adv["id"],
                   cliente=pessoa_id, oportunidade=oport_id, data=inicio.date().isoformat(),
                   data_fim=inicio.date().isoformat(), hora_inicio=f"{inicio:%H:%M}", hora_fim=f"{fim:%H:%M}",
@@ -1241,9 +1251,11 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
     except OrcamentoEasyJur:
         raise
     except Exception as erro:
+        log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
+        if nova_tentativa and programar_nova_tentativa(chave, erro):
+            return False  # erro passageiro: tenta de novo sozinho mais tarde, sem avisar ninguém (05/11)
         # Não tenta de novo a cada minuto (caso Hana, 18/10: gastou a cota do plantão repetindo o erro).
         _falhas.add(chave)
-        log(f"gravação da reunião falhou: {type(erro).__name__}: {erro}")
         motivo = re.sub(r"^\S+: ", "", str(erro))[:350]
         avisar_lucas(zaia, (
             f"🛠️ *NÃO CONSEGUI GRAVAR A REUNIÃO — {nome} ({tel})*\n"
@@ -1463,7 +1475,8 @@ def comandos_dos_advogados(zaia, conversas, easyjur_fn, agenda_fn, leads, penden
             continue
         origem = "Horário combinado pela equipe (GRAVAR " + ("no privado)" if tel_adv else "no grupo)")
         ok = gravar_reuniao(zaia, ej, conv, nome, lead["tel"], adv, inicio, area, resumo, pendentes, agora,
-                            contagem, chave, origem, marca if g == GRUPO else "", modo=modo)
+                            contagem, chave, origem, marca if g == GRUPO else "", modo=modo,
+                            nova_tentativa=False)  # comando de advogado: responde na hora
         if ok and g != GRUPO:
             responder(f"✅ Gravado: {nome}, {texto_slot(inicio)} com {adv['curto']}"
                       f"{' (presencial)' if modo == 'presencial' else ''} (aviso no grupo Firma 2026).")
@@ -1702,6 +1715,27 @@ def ocupado(agenda, adv, inicio):
     return False
 
 
+def ofertado_continua_livre(agenda, adv, inicio, agora):
+    """Horário que o próprio despachante ofereceu: continua livre se não passou, não bate com compromisso e o dia
+    não ficou bloqueado (audiência/viagem). Caso de 05/11: livres() descarta o dia de hoje e as próximas 3 h, então
+    o lead que respondia de manhã escolhendo o horário daquele dia gerava CONFLITO DE AGENDA falso."""
+    if inicio <= agora:
+        return False
+    if inicio in agenda.livres(adv, set()):
+        return True
+    if ocupado(agenda, adv, inicio):
+        return False
+    for it in agenda.itens(adv["id"], inicio.date(), inicio.date()):
+        if it.get("status") == "S":
+            continue
+        tipo = (it.get("tipo") or "").upper()
+        if adv.get("bloqueia_dia_audiencia") and tipo == "AUDIENCIA":
+            return False
+        if tipo == "VIAGEM" and (it.get("hora_inicio") or "00:00")[:5] == "00:00":
+            return False
+    return True
+
+
 def outros_horarios(zaia, conversas, conv, lead, msgs, ofertas, agenda_fn, reservados_fn, agora, contagem):
     """O lead respondeu à oferta sem escolher: manda mais 2 horários ou avisa o advogado no privado."""
     oferta, txt = ofertas[-1], ofertas[-1]["content"]
@@ -1877,6 +1911,8 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         chave = (tel, inicio.isoformat())
         if chave in _gravadas:
             continue  # já conferida neste plantão: não consulta o EasyJur de novo a cada minuto
+        if not tentativa_liberada(chave):
+            continue  # erro passageiro na gravação: espera a próxima tentativa programada
         if chave in _falhas or any("NÃO CONSEGUI GRAVAR" in (m.get("content") or "") and tel in (m.get("content") or "")
                                    for m in (grupo or {}).get("mensagens", [])) \
                 or ja_avisou_lucas(zaia, ("NÃO CONSEGUI GRAVAR", tel, texto_slot(inicio))):
@@ -1892,7 +1928,7 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
         area, _ = classificar(lead.get("texto", ""))
         resumo = resumo_do_caso(lead.get("texto", "")) or "ver a conversa no WhatsApp."
         # horário especial (OFERECER do advogado) pode ser fora da grade: só não pode bater com outro compromisso
-        if ocupado(agenda, adv, inicio) if MARCA_ESPECIAL in txt else inicio not in agenda.livres(adv, set()):
+        if ocupado(agenda, adv, inicio) if MARCA_ESPECIAL in txt else not ofertado_continua_livre(agenda, adv, inicio, agora):
             avisado = any("CONFLITO DE AGENDA" in (m.get("content") or "") and tel in (m.get("content") or "")
                           for m in (grupo or {}).get("mensagens", []))
             if avisado or tel in _conflitos_avisados:
@@ -2014,6 +2050,32 @@ _concluidos = {"ultima": None, "feitos": set()}
 _tel_cache = {}  # id do atendimento -> telefone (evita repetir get_pessoa a cada rodada)
 _gravadas = set()  # (telefone, início) de reuniões já conferidas/gravadas no EasyJur neste plantão
 _falhas = set()  # (telefone, início) cuja gravação falhou: a equipe é avisada e não se tenta de novo
+_parciais = {}  # (telefone, início) -> {"pessoa": id, "oport": id} já criados antes de uma falha
+_tentativas = {}  # (telefone, início) -> (falhas passageiras, quando pode tentar de novo)
+ESPERAS_GRAVACAO_MIN = (10, 30, 60)  # depois disso, avisa o Dr. Lucas
+
+
+def erro_passageiro(erro):
+    """Queda de conexão, demora ou erro do lado do servidor (5xx): vale tentar de novo sem mudar nada."""
+    t = str(erro)
+    return ("sem conexão" in t or "timed out" in t.lower() or "resposta vazia" in t
+            or bool(re.search(r"HTTP 5\d\d", t)))
+
+
+def programar_nova_tentativa(chave, erro):
+    """True se o erro é passageiro e ainda há tentativa: agenda a próxima e não avisa ninguém."""
+    n = _tentativas.get(chave, (0, None))[0]
+    if not erro_passageiro(erro) or n >= len(ESPERAS_GRAVACAO_MIN):
+        return False
+    quando = datetime.now(BRT) + timedelta(minutes=ESPERAS_GRAVACAO_MIN[n])
+    _tentativas[chave] = (n + 1, quando)
+    log(f"erro passageiro na gravação; tentativa {n + 2} às {quando:%H:%M}")
+    return True
+
+
+def tentativa_liberada(chave):
+    quando = _tentativas.get(chave, (0, None))[1]
+    return not quando or datetime.now(BRT) >= quando
 _ej_cliente = {}  # cliente MCP do EasyJur reaproveitado entre as rodadas do plantão
 
 

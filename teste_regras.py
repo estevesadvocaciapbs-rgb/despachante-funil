@@ -261,7 +261,9 @@ d.ESTADO_EJ.update(avisado=False)
 d.DRY_RUN = False
 z = FakeZAviso()
 d._avisar_orcamento(z, d.OrcamentoEasyJur("limite de 60 chamadas ao EasyJur neste plantão atingido"))
-d._avisar_orcamento(z, d.OrcamentoEasyJur("de novo"))
+assert z.enviadas == [], "limite do plantão volta sozinho: não avisa (05/11)"
+d._avisar_orcamento(z, d.OrcamentoEasyJur("cota mensal da API do EasyJur esgotada (HTTP 429)"))
+d._avisar_orcamento(z, d.OrcamentoEasyJur("EasyJur em pausa até 10:00 (cota mensal esgotada)"))
 assert z.enviadas == [("enviar_mensagem", d.TEL_ERROS)], z.enviadas
 assert d.ja_avisou_lucas(z, ("EasyJur pausado",))
 assert not d.ja_avisou_lucas(z, ("NÃO CONSEGUI GRAVAR", "5594900000001"))
@@ -963,3 +965,49 @@ d.sugerir_gravar(z, {"contact": {"name": "Bia"}}, {"tel": "5594900000052", "nome
                  set(d.RE_SLOT.findall(_ofC["content"])), {"mensagens": []}, {})
 assert z.env and "FORA DA OFERTA" in str(z.env), z.env
 print("OK — horas da oferta repetidas sem data não viram 'fora da oferta'; hora nova continua avisando")
+
+# ---- 05/11: horário ofertado escolhido no próprio dia não é "conflito"; ocupado de verdade é
+class _AgLivre:
+    def __init__(s, itens): s.i = itens
+    def livres(s, adv, res): return []  # livres() não enxerga o dia de hoje nem as próximas 3 h
+    def itens(s, adv_id, a, b, tipo=None): return s.i
+_agora5 = datetime(2026, 11, 5, 8, 0, tzinfo=d.BRT)
+_h5 = datetime(2026, 11, 5, 10, 30, tzinfo=d.BRT)
+assert d.ofertado_continua_livre(_AgLivre([]), d.DANIELLE, _h5, _agora5)
+_comp = {"tipo": "AUDIENCIA", "status": "P", "data": "2026-11-05", "hora_inicio": "10:00:00", "hora_fim": "11:30:00"}
+assert not d.ofertado_continua_livre(_AgLivre([_comp]), d.DANIELLE, _h5, _agora5)
+assert not d.ofertado_continua_livre(_AgLivre([]), d.DANIELLE, _h5, _h5 + timedelta(minutes=1))  # já passou
+print("OK — horário ofertado para hoje continua valendo; ocupado ou passado não")
+
+# ---- 05/11: queda de conexão na gravação tenta de novo sozinha, sem duplicar pessoa/oportunidade
+class _EJFalha(EJG):
+    def __init__(s, falhas): super().__init__(); s.falhas = falhas
+    def chamar(s, f, **a):
+        if f == "create_agenda" and s.falhas:
+            s.falhas -= 1
+            s.env.append((f, a))
+            raise RuntimeError("EasyJur: sem conexão — timed out")
+        return super().chamar(f, **a)
+_zf, _ejf = ZP(), _EJFalha(1)
+d._gravadas.clear(); d._falhas.clear(); d._tentativas.clear(); d._parciais.clear()
+_ch5 = ("5594900000055", "x")
+_args = (_zf, _ejf, _conv, "Teste Queda", "5594900000055", d.FERNANDA, _d2, "civel", "caso", [],
+         datetime(2026, 10, 21, 9, 0, tzinfo=d.BRT), {"reunioes": 0}, _ch5, "teste")
+assert not d.gravar_reuniao(*_args)
+assert _ch5 not in d._falhas and not d.tentativa_liberada(_ch5)
+assert not [a for f, a in _zf.env if f == "enviar_mensagem"], "erro passageiro não avisa ninguém"
+d._tentativas[_ch5] = (1, datetime.now(d.BRT) - timedelta(minutes=1))  # chegou a hora da nova tentativa
+assert d.tentativa_liberada(_ch5) and d.gravar_reuniao(*_args)
+assert [f for f, a in _ejf.env].count("create_oportunidade") == 1 and [f for f, a in _ejf.env].count("create_pessoa") == 1
+# erro de dado (422) continua avisando na hora
+_zf2 = ZP()
+class _EJ422(EJG):
+    def chamar(s, f, **a):
+        if f == "create_agenda":
+            raise RuntimeError("EasyJur: HTTP 422 — campo inválido")
+        return super().chamar(f, **a)
+_ch6 = ("5594900000066", "x")
+assert not d.gravar_reuniao(_zf2, _EJ422(), _conv, "Teste 422", "5594900000066", d.FERNANDA, _d2, "civel", "caso", [],
+                            datetime(2026, 10, 21, 9, 0, tzinfo=d.BRT), {"reunioes": 0}, _ch6, "teste")
+assert _ch6 in d._falhas
+print("OK — queda de conexão na gravação tenta de novo sem avisar e sem duplicar; erro 422 avisa")
