@@ -6,6 +6,11 @@ on:
     # Ao terminar (ou falhar), o próprio plantão chama o próximo; o "Vigia do plantão"
     # religa se o GitHub derrubar tudo. Este agendamento é só mais uma garantia.
     - cron: "0 * * * *"
+  push:
+    # Vigia do PC do escritório (05/11): de 30/10 a 04/11 o GitHub parou de disparar os agendamentos
+    # depois de uma falha dele; quando não há plantão há mais de 40 min, o PC grava acordar.txt e o push liga.
+    branches: [main]
+    paths: ["acordar.txt"]
   workflow_dispatch:
     inputs:
       simulacao:
