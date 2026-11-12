@@ -197,11 +197,14 @@ class FakeZEnvio(FakeZ):
         super().__init__(grupos=grupos)
         self.enviadas = []
     def chamar(self, f, **a):
-        if f == "enviar_mensagem_grupo":
-            assert a["assinatura"] == "ia" and a["grupoId"] == "claude-grupo-18"
+        if f == "enviar_mensagem":  # 12/11: a lista da manhã vai ao privado do Dr. Lucas
+            assert a["assinatura"] == "ia" and a["numero"] == p.LUCAS_TEL
             self.enviadas.append(a["texto"])
-            self.grupos["claude-grupo-18"].append(mg("AGENT", "*Annie*:\n" + a["texto"], "2026-10-22T11:06:00.000Z"))
+            self.privados.setdefault(p.LUCAS_TEL, []).append(
+                mg("AGENT", "*Annie*:\n" + a["texto"], "2026-10-22T11:06:00.000Z"))
             return {}
+        if f == "enviar_mensagem_grupo":
+            raise AssertionError("a lista da manhã não vai mais ao grupo")
         return super().chamar(f, **a)
 
 novo_plantao(); p._estado["aviso_fin"] = None

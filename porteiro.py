@@ -26,6 +26,7 @@ BRT = timezone(timedelta(hours=-3))
 INTERVALO = timedelta(minutes=2)
 ESPERA_ENTRE_CHAMADAS = timedelta(minutes=5)   # uma rodada do Claude leva 1 a 3 minutos
 GRUPOS = ["claude-grupo-1", "claude-grupo-17"]
+LUCAS_TEL = "5524992432455"  # falhas e pendências do financeiro vão ao privado dele (12/11)
 PRIVADOS = {"5594992048054": "danielle", "5594991742534": "fernanda", "5524992432455": "lucas"}
 RAMO_SINAL, ARQUIVO_SINAL = "sinal", "sinal.json"
 GRUPO_FINANCEIRO = "claude-grupo-18"     # "Financeiro Escritório" (os 3 advogados): pedidos e aprovações F
@@ -78,6 +79,8 @@ def pedido_financeiro(texto):
     t = norm(texto)
     if not t or re.match(r"^\s*\*?v\d", t) or re.search(r"\btarefa\b|\bagenda\b|\breuniao\b", t):
         return False  # resposta V do revalidador, ou pedido de agenda/tarefa (do Secretário geral)
+    if re.match(r"^\s*\*?(ok|editar|nao)\s*f\s*\d", t):
+        return True  # resposta a rascunho F mandada no privado: o lugar é o grupo do financeiro
     return bool(RE_FIN_TERMO.search(t) and RE_FIN_VERBO.search(t))
 
 
@@ -360,13 +363,22 @@ def pendencias_financeiro(msgs, agora):
 
 
 def avisar_pendencias(zaia, msgs, agora):
-    """Uma vez por dia útil, a partir das 8h, lista no grupo do financeiro o que está parado."""
+    """Uma vez por dia útil, a partir das 8h, lista no PRIVADO do Dr. Lucas o que está parado no financeiro.
+
+    Regra da usuária (12/11): falha, dúvida e pendência de lançamento vão ao Dr. Lucas, no privado; o grupo do
+    financeiro fica com os rascunhos e as confirmações."""
     local = agora.astimezone(BRT)
     hoje = local.date()
     if local.weekday() >= 5 or not HORA_AVISO <= local.hour < HORA_AVISO_FIM or _estado["aviso_fin"] == hoje:
         return
     cab = f"{AVISO_PENDENCIAS} — {local:%d/%m}*"
-    if any(m.get("sender") != "CONTACT" and _sem_assinatura(m.get("content")).startswith(cab) for m in msgs):
+    try:
+        conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=LUCAS_TEL) or {}).get("conversa")
+        priv = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []) if conv else []
+    except Exception as erro:
+        _log(f"privado do Dr. Lucas não lido para as pendências: {type(erro).__name__}")
+        return  # tenta de novo na próxima volta
+    if any(m.get("sender") != "CONTACT" and _sem_assinatura(m.get("content")).startswith(cab) for m in priv + msgs):
         _estado["aviso_fin"] = hoje
         return
     itens = pendencias_financeiro(msgs, agora)
@@ -374,11 +386,11 @@ def avisar_pendencias(zaia, msgs, agora):
     if not itens:
         return
     texto = (cab + "\n" + "\n".join(linha for _, linha in itens)
-             + "\n_Despesa aprovada é lançada no EasyJur no lançamento automático (8h30, 11h30, 15h30 e 22h30) "
-             "e confirmada aqui com 🧾. "
-             "Se algo da lista já foi resolvido, responda o código (ex.: NÃO F4) ou ignore._")
+             + "\n_Despesa aprovada é lançada no EasyJur pelo robô e confirmada no grupo Financeiro com 🧾. "
+             "Para resolver, responda o código no grupo Financeiro (ex.: NÃO F4 · EDITAR F4: ajuste) ou ignore "
+             "se já foi resolvido._")
     try:
-        zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO_FINANCEIRO, texto=texto)
+        zaia.chamar("enviar_mensagem", assinatura="ia", numero=LUCAS_TEL, texto=texto)
         _log(f"aviso de pendências do financeiro: {len(itens)} item(ns)")
     except Exception as erro:
         _estado["aviso_fin"] = None  # tenta de novo na próxima volta
