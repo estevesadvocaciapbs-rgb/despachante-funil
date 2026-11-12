@@ -462,8 +462,11 @@ def reprova_viabilidade(texto):
 EXCECOES = {
     "gestante": r"gestante|gravid",
     "acidente ou doença": r"acidente|doenca ocupacional|afastad|\binss\b|auxilio.doenca|lesao|cirurgia|\bcat\b",
-    "assédio": r"assedio|humilha|xinga|constrang",
+    # 12/11 (caso Fabrícia, ~3 meses de casa): só o assédio SEXUAL agenda sozinho; o moral entra na nota normal
+    "assédio sexual": r"assedio sexual|abuso sexual|importunacao sexual|investida\w* sexua|conotacao sexual",
 }
+ASSEDIO_MORAL = r"assedio|humilha|xinga|constrang"
+MIN_ASSEDIO_MORAL_DIAS = 90  # assédio moral com menos de 3 meses de empresa é descartado (usuária, 12/11)
 FALTAS_OBJETIVAS = {
     "FGTS irregular": r"fgts",
     "salário atrasado ou por fora": r"salario\w* (atrasad|por fora)|atras\w* (no |do |de )?(pagamento|salario)"
@@ -519,7 +522,8 @@ def avaliar_trabalhista(texto, agora):
     excecao = next((nome for nome, rx in EXCECOES.items() if re.search(rx, corpo)), None)
     faltas = [nome for nome, rx in FALTAS_OBJETIVAS.items() if re.search(rx, corpo)]
     dias = tempo_de_empresa_dias(corpo, agora)
-    solidez = 3 if len(faltas) >= 2 else 2 if faltas else (1 if excecao == "assédio" else 0)
+    moral = not excecao and bool(re.search(ASSEDIO_MORAL, corpo))
+    solidez = 3 if len(faltas) >= 2 else 2 if faltas else (1 if moral or excecao == "assédio sexual" else 0)
     prova = 3 if re.search(PROVA_DOCUMENTO, corpo) else 2 if re.search(PROVA_TESTEMUNHA, corpo) else 1
     if dias is None:
         economico = 1
@@ -530,6 +534,8 @@ def avaliar_trabalhista(texto, agora):
     motivo = None
     if reprova_viabilidade(texto) and (dias is None or dias <= 45):
         motivo = "contrato de experiência de até 45 dias (filtro de entrada)"
+    elif moral and dias is not None and dias < MIN_ASSEDIO_MORAL_DIAS:
+        motivo = "assédio moral com menos de 3 meses de empresa (descartado pela regra do escritório)"
     elif solidez == 0:
         motivo = "nenhuma falta objetiva identificada no relato"
     elif economico == 0 and len(faltas) < 2:

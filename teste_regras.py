@@ -1028,3 +1028,17 @@ assert "22/10 às 10:30" not in _re7[0]  # horário já ofertado não volta
 assert not [a for f, a in _z7.env if f == "enviar_mensagem_grupo" and "CONFLITO" in a["texto"]]
 assert not [a for f, a in _ej7.env if f == "create_agenda"]
 print("OK — conflito real de agenda: o lead recebe outros 2 horários, sem aviso à equipe")
+
+# ---- 12/11 (caso Fabrícia): só assédio sexual agenda sozinho; assédio moral com menos de 3 meses é descartado
+_ag = datetime(2026, 11, 12, 16, 0, tzinfo=_tz2.utc)
+_fab = ("Trabalha como auxiliar de cozinha, com cerca de três meses de casa. A empregadora gritava e humilhava na "
+        "frente dos colegas. Não assinou papel de rescisão. Tem documentos.")
+_av = d.avaliar_trabalhista(_fab.replace("três meses", "dois meses"), _ag)
+assert not _av["agenda"] and "assédio moral com menos de 3 meses" in _av["motivo"], _av
+assert not d.avaliar_trabalhista(_fab, _ag)["agenda"], "assédio moral não é mais exceção"
+_sx = d.avaliar_trabalhista("Trabalha há um mês e sofreu assédio sexual do gerente.", _ag)
+assert _sx["agenda"] and _sx["excecao"] == "assédio sexual", _sx
+_ml = d.avaliar_trabalhista("Trabalha há 3 anos, é humilhada pelo chefe, FGTS não depositado e horas extras sem "
+                            "pagamento. Tem holerite.", _ag)
+assert _ml["agenda"] and _ml["excecao"] is None, _ml
+print("OK — só assédio sexual agenda sozinho; assédio moral com menos de 3 meses é descartado")
