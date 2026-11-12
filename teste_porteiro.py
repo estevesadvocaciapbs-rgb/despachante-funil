@@ -251,16 +251,14 @@ pedido_fin = m("CONTACT", "Faça o cadastro na aba financeiro do processo do Kev
                           "parcelas. Não deve constar como despesa ou receita", 5)
 z = FakeZEnv({LUC: [pedido_fin]})
 p._estado["ultima"] = None
+_fin = []
+_orig_fin = p.avisar_financeiro
+p.avisar_financeiro = lambda: _fin.append(1) or True
 p.rodada(z, INICIO + timedelta(minutes=6))
+p.avisar_financeiro = _orig_fin
 assert not chamadas, "pedido de financeiro no privado não acorda o Secretário geral"
-assert len(z.env) == 1 and z.env[0]["numero"] == LUC and "Financeiro Escritório" in z.env[0]["texto"], z.env
-# já respondido (plantão reiniciado): não repete
-novo_plantao()
-z2 = FakeZEnv({LUC: [pedido_fin, m("AGENT", p.texto_redirecionar("lucas"), 7)]})
-p.rodada(z2, INICIO + timedelta(minutes=1))
-p._estado["ultima"] = None
-p.rodada(z2, INICIO + timedelta(minutes=8))
-assert not z2.env, z2.env
+assert _fin, "pedido de financeiro no privado acorda a rotina financeira"
+assert not z.env, "nada de mandar o advogado para o grupo"
 assert not p.pedido_financeiro("V3 alvará 16.406,14 [processo 0815180]")
 assert not p.pedido_financeiro("cria uma tarefa pra mim: conferir a receita do Wilson")
-print("OK — pedido de financeiro no privado é respondido pelo código com o caminho do grupo, uma vez só")
+print("OK — pedido de financeiro no privado acorda só a rotina financeira")

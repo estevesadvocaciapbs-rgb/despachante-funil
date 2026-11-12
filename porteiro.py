@@ -64,15 +64,13 @@ RE_PEDIDO_GRUPO = re.compile(
     r"mude|muda|troque|troca|desmarque|desmarca|transfira|encaminhe|encaminha|"
     r"de baixa|dar baixa|da baixa|por favor)\b")
 
-# Pedido de financeiro no PRIVADO (caso Kevin, 12/11): o Secretário geral deixa para a rotina financeira, que só lê o
-# grupo "Financeiro Escritório" — o pedido ficava sem resposta. Agora o código responde na hora, sem IA, com o
-# caminho certo e um exemplo (regra da usuária: erro de formato se ensina no privado do advogado).
+# Pedido de financeiro no PRIVADO (caso Kevin, 12/11): o Secretário geral deixa para a rotina financeira, e
+# nada acordava a rotina financeira pelo privado. Agora o pedido no privado acorda SÓ a rotina financeira (que lê
+# os privados e o grupo "Financeiro Escritório"); dúvida ou falha dela vai para o privado do Dr. Lucas.
 RE_FIN_TERMO = re.compile(r"\b(aba financeir\w*|financeiro|receitas?|despesas?|repasses?|honorarios?|alvaras?|rpv|"
                           r"lancamentos? financeir\w*)\b")
 RE_FIN_VERBO = re.compile(r"\b(lanc\w*|cadastr\w*|registr\w*|inclu\w*|insir\w*|insere|coloqu\w*|coloca\w*|faca|"
                           r"baix\w*|repass\w*)\b")
-MARCA_FIN_PRIVADO = "🧭 *Pedido de financeiro*"
-GRUPO_FINANCEIRO_NOME = "Financeiro Escritório"
 
 
 def pedido_financeiro(texto):
@@ -80,31 +78,8 @@ def pedido_financeiro(texto):
     if not t or re.match(r"^\s*\*?v\d", t) or re.search(r"\btarefa\b|\bagenda\b|\breuniao\b", t):
         return False  # resposta V do revalidador, ou pedido de agenda/tarefa (do Secretário geral)
     if re.match(r"^\s*\*?(ok|editar|nao)\s*f\s*\d", t):
-        return True  # resposta a rascunho F mandada no privado: o lugar é o grupo do financeiro
+        return True  # resposta a rascunho F mandada no privado: é da rotina financeira
     return bool(RE_FIN_TERMO.search(t) and RE_FIN_VERBO.search(t))
-
-
-def texto_redirecionar(quem):
-    return (f"{MARCA_FIN_PRIVADO}: lançamento no EasyJur eu faço pelo grupo *{GRUPO_FINANCEIRO_NOME}*, não pelo "
-            "privado. Mande lá o mesmo pedido, que a rotina do financeiro prepara o rascunho F e lança depois do seu OK."
-            "\nExemplo: _Lance na aba Financeiro do processo do Fulano: acordo de R$ 3.000,00 em 2 parcelas de "
-            "R$ 1.500,00 (17/12 e 18/01), só como valor do processo, sem receita e sem despesa._")
-
-
-def redirecionar_financeiro(zaia, tel, quem, msgs, recentes):
-    """Responde no privado cada pedido de financeiro novo (uma vez só, mesmo se o plantão reiniciar)."""
-    for m in recentes:
-        if (m.get("sender") != "CONTACT" or m.get("contentType") not in (None, "CHAT")
-                or not pedido_financeiro(m.get("content"))):
-            continue
-        if any(x.get("sender") != "CONTACT" and MARCA_FIN_PRIVADO in (x.get("content") or "")
-               and x["createdAt"] > m["createdAt"] for x in msgs):
-            continue
-        try:
-            zaia.chamar("enviar_mensagem", assinatura="ia", numero=tel, texto=texto_redirecionar(quem))
-            _log(f"pedido de financeiro no privado ({quem}): respondido com o caminho do grupo")
-        except Exception as erro:
-            _log(f"pedido de financeiro no privado ({quem}) sem resposta: {type(erro).__name__}")
 
 
 _estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False,
@@ -164,7 +139,7 @@ def pedido_no_privado(m, quem):
     if tipo in ("IMAGE", "DOCUMENT", "PTT", "AUDIO"):
         return True  # comprovante, documento ou áudio transcrito: precisa de IA
     if pedido_financeiro(m.get("content")):
-        return False  # o código responde com o caminho do grupo do financeiro (redirecionar_financeiro)
+        return False  # acorda só a rotina financeira (rodada)
     return not resolvido_pelo_codigo(m.get("content"), quem)
 
 
@@ -441,7 +416,8 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
                     continue
                 msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
             recentes = novos(msgs, _estado["desde"], "p" + tel)
-            redirecionar_financeiro(zaia, tel, quem, msgs, recentes)
+            if any(m.get("sender") == "CONTACT" and pedido_financeiro(m.get("content")) for m in recentes):
+                _estado["fin_pendente"] = True  # pedido de financeiro no privado: acorda a rotina financeira
             achou += sum(1 for m in recentes if pedido_no_privado(m, quem))
         except Exception as erro:
             _log(f"privado ({quem}) não lido: {type(erro).__name__}")
