@@ -226,3 +226,38 @@ for _t, _esp in [("Quero agendar uma mensagem para a Ana na quinta às 8h dizend
                  ("vi a mensagem dela agora", False), ("kkkk", False)]:
     assert bool(_p.RE_PEDIDO_GRUPO.search(_p.norm(_t))) == _esp, _t
 print("OK — pedido de mensagem programada no grupo acorda as rotinas")
+
+
+# 12/11 (caso Kevin): pedido de financeiro no privado não acorda o Secretário; o código responde com o caminho do grupo
+class FakeZEnv(FakeZ):
+    def __init__(self, privados):
+        super().__init__(privados)
+        self.env = []
+
+    def chamar(self, f, **a):
+        if f == "enviar_mensagem":
+            self.env.append(a)
+            return {}
+        return super().chamar(f, **a)
+
+
+LUC = "5524992432455"
+novo_plantao()
+p.rodada(FakeZEnv({}), INICIO)
+pedido_fin = m("CONTACT", "Faça o cadastro na aba financeiro do processo do Kevin: acordo de R$ 3.000,00 em 2 "
+                          "parcelas. Não deve constar como despesa ou receita", 5)
+z = FakeZEnv({LUC: [pedido_fin]})
+p._estado["ultima"] = None
+p.rodada(z, INICIO + timedelta(minutes=6))
+assert not chamadas, "pedido de financeiro no privado não acorda o Secretário geral"
+assert len(z.env) == 1 and z.env[0]["numero"] == LUC and "Financeiro Escritório" in z.env[0]["texto"], z.env
+# já respondido (plantão reiniciado): não repete
+novo_plantao()
+z2 = FakeZEnv({LUC: [pedido_fin, m("AGENT", p.texto_redirecionar("lucas"), 7)]})
+p.rodada(z2, INICIO + timedelta(minutes=1))
+p._estado["ultima"] = None
+p.rodada(z2, INICIO + timedelta(minutes=8))
+assert not z2.env, z2.env
+assert not p.pedido_financeiro("V3 alvará 16.406,14 [processo 0815180]")
+assert not p.pedido_financeiro("cria uma tarefa pra mim: conferir a receita do Wilson")
+print("OK — pedido de financeiro no privado é respondido pelo código com o caminho do grupo, uma vez só")
