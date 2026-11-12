@@ -47,6 +47,8 @@ function doPost(e) {
     }
     if (p.acao === 'criar') return saida(criar(p));
     if (p.acao === 'buscar') return saida(buscar(p));
+    if (p.acao === 'procurar_pasta') return saida({ ok: true, candidatos: procurarPasta(p.nome, p.area) });
+    if (p.acao === 'guardar') return saida(guardar(p));
     if (p.acao === 'teste') return saida({ ok: true, calendario: CALENDARIO });
     return saida({ ok: false, erro: 'ação desconhecida' });
   } catch (err) {
@@ -171,6 +173,87 @@ function instalarLimpeza() {
   });
   ScriptApp.newTrigger('limparMidias').timeBased().everyDays(1).atHour(21).inTimezone(FUSO).create();
   limparMidias();
+}
+
+/**
+ * Arquivos do cliente para a pasta dele (pedido da usuária, 12/11): o despachante manda o nome do contato
+ * (já limpo, só palavras do nome) e o telefone; a ponte acha a pasta Processos › ÁREA › Nome e move para
+ * "Docs de Prova" os arquivos daquele telefone em "Mídias - Whatsapp" criados na janela [de, ate].
+ * Pasta nova só quando o despachante pede (criar=true: documentos pedidos depois da reunião).
+ */
+var PASTA_PROCESSOS = '12fAiFgU-TracmvfpMvoDGJ6QVqqMOiBw';
+var DOCS = 'Docs de Prova';
+
+function normal(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/\s+-\s+.*$/, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function areas(area) {
+  var lista = [], it = DriveApp.getFolderById(PASTA_PROCESSOS).getFolders();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!area || normal(f.getName()) === normal(area)) lista.push(f);
+  }
+  return lista;
+}
+
+/** Pastas de cliente cujo nome tem TODAS as palavras do nome do contato (mínimo 2 palavras). */
+function procurarPasta(nome, area) {
+  var palavras = normal(nome).split(' ').filter(function (w) { return w.length > 1; });
+  if (palavras.length < 2) return [];
+  var achados = [];
+  areas(area).forEach(function (a) {
+    var it = a.getFolders();
+    while (it.hasNext()) {
+      var f = it.next(), tem = ' ' + normal(f.getName()) + ' ';
+      if (palavras.every(function (w) { return tem.indexOf(' ' + w + ' ') >= 0; })) {
+        achados.push({ id: f.getId(), caminho: 'Processos › ' + a.getName() + ' › ' + f.getName() });
+      }
+    }
+  });
+  return achados;
+}
+
+function subpasta(pai, nome) {
+  var it = pai.getFolders();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (normal(f.getName()) === normal(nome)) return f;
+  }
+  return pai.createFolder(nome);
+}
+
+function guardar(p) {
+  var cand = procurarPasta(p.nome, p.criar ? '' : p.area);  // antes de criar, procura em todas as áreas
+  var alvo = null, caminho = '';
+  if (p.escolha && cand[p.escolha - 1]) cand = [cand[p.escolha - 1]];
+  if (cand.length > 1) return { ok: true, status: 'varias', candidatos: cand };
+  if (cand.length === 1) {
+    alvo = DriveApp.getFolderById(cand[0].id);
+    caminho = cand[0].caminho;
+  } else if (p.criar && p.area && p.nome_pasta) {
+    var a = areas(p.area);
+    if (!a.length) return { ok: true, status: 'sem_area' };
+    alvo = a[0].createFolder(p.nome_pasta);
+    caminho = 'Processos › ' + a[0].getName() + ' › ' + p.nome_pasta;
+  } else {
+    return { ok: true, status: 'nenhuma' };
+  }
+  var de = new Date(p.de), ate = new Date(p.ate), n = 0;
+  var pastas = DriveApp.getFolderById(PASTA_MIDIAS).getFoldersByName(String(p.tel));
+  var docs = null;
+  while (pastas.hasNext()) {
+    var arqs = pastas.next().getFiles();
+    while (arqs.hasNext()) {
+      var arq = arqs.next(), criado = arq.getDateCreated();
+      if (criado < de || criado > ate || /^audio\//.test(arq.getMimeType())) continue;
+      if (!docs) docs = subpasta(alvo, DOCS);
+      arq.moveTo(docs);
+      n++;
+    }
+  }
+  return { ok: true, status: 'movido', caminho: caminho + ' › ' + DOCS, n: n, criada: !cand.length };
 }
 
 /** Reserva: tenta abrir uma sala já existente (o Google só deixa nas salas criadas pela API). */

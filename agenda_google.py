@@ -36,5 +36,24 @@ def criar_reuniao(titulo, nome, inicio, fim, descricao, convidado=None):
                     "descricao": descricao, "convidado": convidado or ""})
 
 
+def procurar_pasta(nome, area=None):
+    """Pastas Processos › ÁREA › Nome com todas as palavras de `nome`: [{'id','caminho'}] ou None sem ponte."""
+    if not configurado():
+        return None
+    return _chamar({"acao": "procurar_pasta", "nome": nome, "area": area or ""}, timeout=120).get("candidatos", [])
+
+
+def guardar_arquivos(tel, de, ate, nome, area=None, escolha=None, criar=False, nome_pasta=""):
+    """Move os arquivos do telefone (Mídias - Whatsapp, criados entre de e ate) para Docs de Prova do cliente."""
+    if not configurado():
+        return None
+    from datetime import timezone
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    de, ate = de.astimezone(timezone.utc), ate.astimezone(timezone.utc)
+    return _chamar({"acao": "guardar", "tel": tel, "de": de.strftime(fmt), "ate": ate.strftime(fmt), "nome": nome,
+                    "area": area or "", "escolha": escolha or 0, "criar": bool(criar), "nome_pasta": nome_pasta},
+                   timeout=180)
+
+
 def testar():
     return _chamar({"acao": "teste"}, timeout=30) if configurado() else None

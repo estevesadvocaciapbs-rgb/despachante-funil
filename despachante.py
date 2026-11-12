@@ -2330,6 +2330,11 @@ def main():
         aviso_documento.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], tarefas)
     except Exception as erro:
         log(f"aviso de documento falhou: {type(erro).__name__}")
+    try:  # arquivos do cliente para Processos › Área › Nome › Docs de Prova, com a decisão do advogado (12/11)
+        import pasta_cliente
+        pasta_cliente.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__])
+    except Exception as erro:
+        log(f"pasta do cliente falhou: {type(erro).__name__}")
     try:
         encerrar_concluidos(zaia, easyjur_fn, agora, contagem)
     except OrcamentoEasyJur as erro:

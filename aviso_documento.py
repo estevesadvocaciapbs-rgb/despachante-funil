@@ -66,12 +66,13 @@ def texto_aviso(nome, tel, novos, d):
             f"\n(último às {hora(novos[-1])})\n👉 Os arquivos estão na conversa do cliente na Za.Ia.")
 
 
-def ja_avisado(zaia, adv, tel, ultimo, d):
-    """Outro plantão já mandou este aviso? (o estado em memória some quando o plantão reinicia)"""
+def privado(zaia, adv):
     conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=adv["tel"]) or {}).get("conversa")
-    if not conv:
-        return False
-    msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
+    return (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []) if conv else []
+
+
+def ja_avisado(msgs, tel, ultimo):
+    """Outro plantão já mandou este aviso? (o estado em memória some quando o plantão reinicia)"""
     marca = f"(último às {ultimo})"
     return any(MARCA in (m.get("content") or "") and tel in (m.get("content") or "") and marca in (m.get("content") or "")
                for m in msgs)
@@ -118,8 +119,17 @@ def rodada(zaia, agora, contagem, d, tarefas):
         if d.DRY_RUN:
             d.log("[simulação] avisaria documento de cliente à advogada")
             continue
-        if ja_avisado(zaia, adv, tel, ultimo, d):
+        msgs_adv = privado(zaia, adv)
+        if ja_avisado(msgs_adv, tel, ultimo):
             continue
+        try:  # o que vai acontecer com os arquivos no Drive, com código D para o advogado decidir (12/11)
+            import pasta_cliente
+            bloco = pasta_cliente.bloco_aviso(pasta_cliente.proximo_codigo(msgs_adv), nome, contato, msgs, tarefas,
+                                              adv, agora, d)
+            if bloco:
+                texto += "\n\n" + bloco
+        except Exception as erro:
+            d.log(f"pasta do cliente não consultada: {type(erro).__name__}")
         zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=texto)
         contagem["documentos_avisados"] = contagem.get("documentos_avisados", 0) + 1
         d.log(f"documento de cliente avisado ({adv['curto']})")

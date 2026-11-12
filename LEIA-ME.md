@@ -193,6 +193,22 @@ advogado como co-organizador da chamada.
   bate com o valor e publica o rascunho F; nada é lançado sem o OK de um advogado.
   Comprovante de salário/compra (recebedor de fora) é ignorado.
 
+## Arquivos do cliente na pasta do Drive (`pasta_cliente.py`, desde 12/11/2026)
+
+A Za.Ia salva toda mídia do WhatsApp em "Mídias - Whatsapp" › telefone (a limpeza das 21h manda para a lixeira o
+que fica lá mais de 7 dias). O aviso "📎 DOCUMENTO DE CLIENTE" ao advogado agora leva um código (D1, D2...) e diz o
+destino dos arquivos:
+
+- cliente com pasta em Processos › ÁREA › Nome: 1 hora depois os arquivos vão para "Docs de Prova" dela.
+  `NÃO PASTA D3` impede; `PASTA D3` guarda na hora;
+- sem pasta, mas com documentos pedidos depois da reunião: a pasta é criada na área do caso
+  (`PASTA D3 FAMÍLIA` troca a área) e os arquivos vão para ela, também 1 hora depois;
+- sem pasta e sem pedido de documentos: nada é criado; o advogado cria a pasta e responde `PASTA D3`;
+- mais de uma pasta com o nome: `PASTA D3 2` escolhe a segunda.
+
+Quem move é a ponte do Google (ações `procurar_pasta` e `guardar`). O estado fica nas mensagens do privado do
+advogado (respostas ✅ 👍 ⚠️ ❓ com o código), então reiniciar o plantão não repete nada.
+
 ## Secretaria sem IA (`secretaria.py`)
 
 Roda dentro do mesmo plantão, a cada 2 minutos, e substitui duas rotinas com IA:
