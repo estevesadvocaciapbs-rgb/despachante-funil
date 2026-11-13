@@ -1,0 +1,46 @@
+name: Funil da semana
+
+on:
+  schedule:
+    # Sexta às 17h30, 18h e 18h30 de Belém (20h30, 21h e 21h30 UTC). O código só envia na sexta depois das
+    # 17h30 e uma vez por semana (procura o cabeçalho no grupo Firma 2026), então as repetições não duplicam.
+    - cron: "30 20 * * 5"
+    - cron: "0 21 * * 5"
+    - cron: "30 21 * * 5"
+  # Envio sem clique: um commit em funil-semanal-agora.txt manda o funil da semana corrente na hora.
+  push:
+    branches: [main]
+    paths: ["funil-semanal-agora.txt"]
+  workflow_dispatch:
+    inputs:
+      agora:
+        description: "Enviar já, mesmo fora de sexta 17h30 (não repete se a semana já estiver no grupo)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: funil-semanal
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Enviar o funil da semana ao grupo Firma 2026
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+          EVENTO: ${{ github.event_name }}
+          AGORA: ${{ inputs.agora && '--agora' || '' }}
+        run: |
+          if [ "$EVENTO" = "push" ]; then AGORA="--agora"; fi
+          python funil_semanal.py $AGORA

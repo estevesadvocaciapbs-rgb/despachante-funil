@@ -245,6 +245,16 @@ com IA. Cada comando é executado uma vez: a resposta leva a marca `#número` da
 mensagem do comando. Áudio não é tratado aqui. Só baixa a conversa inteira
 quando chegou mensagem nova (confere antes a hora da última mensagem).
 
+## Funil da semana (`funil_semanal.py`, desde 13/11/2026)
+
+Toda sexta às 17h30 de Belém (workflow "Funil da semana", com repetições às 18h e 18h30 que não duplicam), vai ao
+grupo Firma 2026 o funil da semana (segunda a sexta): leads novos no WhatsApp (relatório da Za.Ia), casos triados
+(oportunidades criadas no EasyJur), reuniões agendadas, reuniões marcadas para a semana (realizadas = concluídas,
+canceladas, sem baixa, ainda vão acontecer), contratos fechados e recusados (oportunidade com status 4/5 encerrada na
+semana), a conversão de cada etapa e o mesmo funil só do tráfego pago. A origem vem do nome da oportunidade
+("Tráfego pago", "Indicação ..."). Envio fora de hora sem clique: commit em `funil-semanal-agora.txt`. O log mostra
+só contagens.
+
 ## Parcelas do mês (`recebimentos.py`, desde 21/10/2026)
 
 No 1º dia útil de cada mês (8h de Belém; nova tentativa às 11h), o workflow
