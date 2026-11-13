@@ -36,7 +36,7 @@ ARQUIVO_DESPESAS = "despesas.json"          # despesas/repasses aprovados ainda 
 INTERVALO_DESPESAS = timedelta(minutes=5)
 JANELA_DESPESAS = timedelta(days=7)
 # "✅ F7 despesa aprovada por Dr. Lucas" / "✅ F7 repasse aprovado por ..." (rotina financeira)
-RE_DESP_APROVADA = re.compile(r"✅\s*\*?F(\d+)\*?\s+(?:despesa|repasse)\b[^\n]{0,40}?aprovad", re.I)
+RE_DESP_APROVADA = re.compile(r"✅\s*\*?F(\d+)\*?\s+(?:despesa|repasse|lan[cç]amento)\b[^\n]{0,40}?aprovad", re.I)
 # "🧾 F7 de 19/10 lançada no EasyJur" (lançamento noturno pelo Chrome)
 RE_DESP_LANCADA = re.compile(r"🧾\s*\*?F(\d+)\*?\s+de\s+(\d{2})/(\d{2})", re.I)
 # "💸 *DESPESA F4*", "💰 *LANÇAMENTO F2*", "💰 *BAIXA F7*", "💸 *REPASSE/DESPESA F8*" (rascunhos da rotina financeira)
