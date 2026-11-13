@@ -3,8 +3,10 @@
 No 1º dia útil de cada mês (Belém), lê no EasyJur as receitas em aberto e manda ao grupo "Financeiro
 Escritório" uma planilha .xlsx com duas abas — as parcelas que vencem no mês e as atrasadas de meses
 anteriores (vencimento, dias em atraso, cliente, valor, parcela, especificação, advogado, forma de
-pagamento, situação e nº da receita) — e um resumo com totais por semana e por advogado. Se a Za.Ia
-recusar o arquivo, a mesma lista vai em texto no grupo.
+pagamento, situação e nº da receita) — e um resumo com totais por semana e por advogado. Desde 13/11 a
+planilha traz também o que o escritório tem A PAGAR no mês (despesas em aberto, inclusive repasses) e uma aba
+"Balanço" (a receber x a pagar = saldo previsto, por semana). Se o grupo recusar o arquivo, ele vai ao privado
+dos três advogados; só se nada aceitar o arquivo a lista vai em texto, e o Dr. Lucas recebe o aviso da falha.
 
 Roda pelo workflow "Parcelas do mês" (.github/workflows/recebimentos.yml), em dias 1 a 7 de cada mês;
 o código decide se já é o 1º dia útil e se a planilha do mês já foi enviada (procura o resumo no grupo),
@@ -34,12 +36,16 @@ GRUPO_FINANCEIRO = "claude-grupo-18"
 # O enviar_midia da Za.Ia só aceita número (tira tudo que não é dígito): para o grupo é preciso o ID de
 # WhatsApp dele (18 dígitos, começa com 1203), que a Za.Ia guarda no contato com o nome do grupo.
 CONTATO_GRUPO = "Financeiro Escritório"
-TITULO = "📊 *Parcelas a receber"
+TITULO = "📊 *Balanço financeiro"
 MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
          "setembro", "outubro", "novembro", "dezembro"]
 FORMAS = {"PI": "Pix", "BO": "Boleto", "CC": "Cartão de crédito", "CD": "Cartão de débito",
           "DI": "Dinheiro", "CH": "Cheque", "DP": "Depósito", "DA": "Débito automático", "TD": "TED"}
 ADVOGADOS = {344269: "Dra. Danielle", 378457: "Dra. Fernanda", 344268: "Dr. Lucas"}
+# Se o grupo não aceitar o arquivo (13/11: em novembro a planilha não chegou como arquivo), ele vai a eles.
+PRIVADOS_ADVOGADOS = {"Dra. Danielle": "5594992048054", "Dra. Fernanda": "5594991742534", "Dr. Lucas": "5524992432455"}
+LUCAS_TEL = PRIVADOS_ADVOGADOS["Dr. Lucas"]
+NOMES_CONTATO_GRUPO = (CONTATO_GRUPO, "Financeiro", "Lucas Seoane")
 SEM_ADVOGADO = "—"
 LIMITE_PARTE = 3500
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -129,6 +135,55 @@ def linhas(ej, receitas, advogados, hoje, cache=None):
     return saida
 
 
+def despesas_em_aberto(ej, ate):
+    """Despesas em aberto (não pagas nem canceladas) com vencimento até `ate`."""
+    vistas = {}
+    for pagina in range(1, 21):
+        r = ej.chamar("list_despesas", status="A", data_vencimento_fim=ate.isoformat(),
+                      page_size=100, page=pagina) or {}
+        for x in r.get("data") or []:
+            if secretaria.norm(x.get("status") or "") not in ("pago", "p", "cancelado", "c"):
+                vistas.setdefault(x["id"], x)
+        if pagina >= int((r.get("meta") or {}).get("total_pages") or 1):
+            break
+    return vistas
+
+
+def nome_favorecido(ej, pid, cache):
+    try:
+        return nome_pessoa(ej, pid, cache)
+    except Exception:  # get_pessoa falha para id de usuário (advogados): o nome vem da tabela
+        return ADVOGADOS.get(int(pid), f"(pessoa {pid})")
+
+
+def linhas_despesas(ej, despesas, hoje, cache):
+    saida = []
+    for x in despesas:
+        venc = date.fromisoformat((x.get("datas") or {}).get("vencimento"))
+        plano = re.sub(r"^[\d.]+\s*-?\s*", "", ((x.get("plano_contas") or {}).get("descricao") or "").strip())
+        saida.append({
+            "venc": venc, "atraso": max((hoje - venc).days, 0),
+            "cliente": nome_favorecido(ej, x.get("id_fornecedor"), cache),
+            "valor": float((x.get("valores") or {}).get("valor") or 0),
+            "espec": plano or "—",
+            "desc": re.sub(r"\s+", " ", (x.get("descricao") or "").strip())[:120] or "—",
+            "forma": x.get("forma_pagamento") or "—",
+            "situacao": "Vencida" if venc < hoje else "A pagar",
+            "id": x["id"],
+        })
+    saida.sort(key=lambda d: (d["venc"], d["cliente"]))
+    return saida
+
+
+def dados_despesas(ej, ano, mes, hoje, cache=None):
+    """(a pagar no mês, a pagar atrasadas de meses anteriores)."""
+    cache, inicio = ({} if cache is None else cache), date(ano, mes, 1).isoformat()
+    todas = despesas_em_aberto(ej, fim_do_mes(ano, mes))
+    do_mes = [x for x in todas.values() if x["datas"]["vencimento"] >= inicio]
+    atrasadas = [x for x in todas.values() if x["datas"]["vencimento"] < inicio]
+    return linhas_despesas(ej, do_mes, hoje, cache), linhas_despesas(ej, atrasadas, hoje, cache)
+
+
 def dados(ej, ano, mes, hoje):
     """(parcelas do mês, atrasadas de meses anteriores), com o advogado de cada receita."""
     fim = fim_do_mes(ano, mes)
@@ -150,6 +205,14 @@ ABA_ATRASO = [("Vencimento", 13, "data", "venc"), ("Dias em atraso", 14, "num", 
               ("Cliente", 38, "txt", "cliente"), ("Valor", 14, "valor", "valor"), ("Parcela", 9, "txt", "parcela"),
               ("Especificação", 44, "txt", "espec"), ("Advogado", 15, "txt", "advogado"),
               ("Forma de pagamento", 18, "txt", "forma"), ("Nº receita EasyJur", 18, "num", "id")]
+ABA_PAGAR = [("Vencimento", 13, "data", "venc"), ("Favorecido", 34, "txt", "cliente"), ("Valor", 14, "valor", "valor"),
+             ("Plano de contas", 36, "txt", "espec"), ("Descrição", 50, "txt", "desc"),
+             ("Forma de pagamento", 18, "txt", "forma"), ("Situação", 11, "txt", "situacao"),
+             ("Nº despesa EasyJur", 18, "num", "id")]
+ABA_PAGAR_ATRASO = [("Vencimento", 13, "data", "venc"), ("Dias em atraso", 14, "num", "atraso"),
+                    ("Favorecido", 34, "txt", "cliente"), ("Valor", 14, "valor", "valor"),
+                    ("Plano de contas", 36, "txt", "espec"), ("Descrição", 50, "txt", "desc"),
+                    ("Nº despesa EasyJur", 18, "num", "id")]
 ESTILOS = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
@@ -205,7 +268,7 @@ def folha(colunas, itens, vazio):
     n = len(itens) + 1
     if itens:
         t, cv = n + 1, letra["valor"]
-        rows.append(f'<row r="{t}">' + _txt(f"{letra['cliente']}{t}", f"TOTAL ({len(itens)} parcelas)", S_NEGRITO)
+        rows.append(f'<row r="{t}">' + _txt(f"{letra['cliente']}{t}", f"TOTAL ({len(itens)} itens)", S_NEGRITO)
                     + f'<c r="{cv}{t}" s="{S_TOTAL}"><f>SUM({cv}2:{cv}{n})</f>'
                     f'<v>{round(sum(x["valor"] for x in itens), 2)}</v></c></row>')
     else:
@@ -220,9 +283,53 @@ def folha(colunas, itens, vazio):
     return xml, (f"$A$1:${ult}${n}" if itens else None)
 
 
+def folha_balanco(linhas_bal):
+    """Aba Balanço: [(rótulo, a receber, a pagar)] -> saldo = receber - pagar (fórmula). Valores None = título."""
+    rows = ['<row r="1">' + "".join(_txt(f"{c}1", t, S_CAB) for c, t in
+                                    zip("ABCD", ("Período", "A receber", "A pagar", "Saldo previsto"))) + "</row>"]
+    for k, (rot, rec_, pag) in enumerate(linhas_bal, 2):
+        if rec_ is None:
+            rows.append(f'<row r="{k}">{_txt(f"A{k}", rot, S_NEGRITO)}</row>')
+            continue
+        s = S_TOTAL if rot.startswith("TOTAL") else S_VALOR
+        rows.append(f'<row r="{k}">' + _txt(f"A{k}", rot, S_NEGRITO if s == S_TOTAL else 0)
+                    + _num(f"B{k}", round(rec_, 2), s) + _num(f"C{k}", round(pag, 2), s)
+                    + f'<c r="D{k}" s="{s}"><f>B{k}-C{k}</f><v>{round(rec_ - pag, 2)}</v></c></row>')
+    cols = "".join(f'<col min="{i}" max="{i}" width="{w}" customWidth="1"/>' for i, w in enumerate((44, 16, 16, 18), 1))
+    xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+           '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+           f'<cols>{cols}</cols><sheetData>{"".join(rows)}</sheetData></worksheet>')
+    return xml, None
+
+
+def semanas_do_mes(ano, mes):
+    ini, ultimo, saida = date(ano, mes, 1), fim_do_mes(ano, mes), []
+    s = ini - timedelta(days=ini.weekday())
+    while s <= ultimo:
+        saida.append((max(s, ini), min(s + timedelta(days=6), ultimo)))
+        s += timedelta(days=7)
+    return saida
+
+
+def balanco(itens, atrasadas, pagar, pagar_atr, ano, mes):
+    def soma(xs, a, b):
+        return sum(x["valor"] for x in xs if a <= x["venc"] <= b)
+    linhas_bal = [("Semana a semana", None, None)]
+    for a, b in semanas_do_mes(ano, mes):
+        linhas_bal.append((f"{a:%d/%m}" if a == b else f"{a:%d/%m} a {b:%d/%m}", soma(itens, a, b), soma(pagar, a, b)))
+    tr, tp = sum(x["valor"] for x in itens), sum(x["valor"] for x in pagar)
+    ar, ap = sum(x["valor"] for x in atrasadas), sum(x["valor"] for x in pagar_atr)
+    linhas_bal += [(f"TOTAL de {rotulo_mes(ano, mes)}", tr, tp),
+                   ("Atrasados de meses anteriores", None, None),
+                   ("Em atraso (ainda não pagos)", ar, ap),
+                   ("TOTAL com os atrasados", tr + ar, tp + ap)]
+    return linhas_bal
+
+
 def planilha(abas):
-    """abas: [(nome, colunas, itens, texto_se_vazia)] -> bytes do .xlsx."""
-    folhas = [folha(colunas, itens, vazio) for _, colunas, itens, vazio in abas]
+    """abas: [(nome, colunas, itens, texto_se_vazia)] -> bytes do .xlsx; colunas None = aba Balanço (itens = linhas)."""
+    folhas = [folha_balanco(itens) if colunas is None else folha(colunas, itens, vazio)
+              for _, colunas, itens, vazio in abas]
     nomes = [_limpo(nome[:31]) for nome, _, _, _ in abas]
     filtros = "".join(f'<definedName name="_xlnm._FilterDatabase" localSheetId="{i}" hidden="1">'
                       f"'{nomes[i]}'!{ref}</definedName>" for i, (_, ref) in enumerate(folhas) if ref)
@@ -262,9 +369,14 @@ def planilha(abas):
     return buf.getvalue()
 
 
-def planilha_do_mes(itens, atrasadas, ano, mes):
-    return planilha([(f"{MESES[mes - 1].capitalize()} {ano}", ABA_MES, itens, "Nenhuma parcela em aberto neste mês."),
-                     ("Atrasadas", ABA_ATRASO, atrasadas, "Nenhuma parcela atrasada de meses anteriores.")])
+def planilha_do_mes(itens, atrasadas, ano, mes, pagar=None, pagar_atr=None):
+    abas = [(f"{MESES[mes - 1].capitalize()} {ano}", ABA_MES, itens, "Nenhuma parcela em aberto neste mês."),
+            ("Atrasadas", ABA_ATRASO, atrasadas, "Nenhuma parcela atrasada de meses anteriores.")]
+    if pagar is None:
+        return planilha(abas)
+    return planilha([("Balanço", None, balanco(itens, atrasadas, pagar, pagar_atr, ano, mes), "")] + abas
+                    + [(f"A pagar {MESES[mes - 1]}", ABA_PAGAR, pagar, "Nenhuma despesa em aberto neste mês."),
+                       ("A pagar atrasadas", ABA_PAGAR_ATRASO, pagar_atr, "Nenhuma despesa atrasada.")])
 
 
 # ---------------------------------------------------------------- mensagens
@@ -281,7 +393,7 @@ def por_advogado(itens):
                      for a, v in sorted(soma.items(), key=lambda kv: ordem.index(kv[0])))
 
 
-def resumo(itens, atrasadas, ano, mes, previa=False, com_planilha=True):
+def resumo(itens, atrasadas, ano, mes, previa=False, com_planilha=True, pagar=None, pagar_atr=None, onde=None):
     semanas = {}
     for x in itens:
         semanas.setdefault(x["venc"] - timedelta(days=x["venc"].weekday()), []).append(x["valor"])
@@ -301,9 +413,19 @@ def resumo(itens, atrasadas, ano, mes, previa=False, com_planilha=True):
         aba = ' (aba "Atrasadas" da planilha)' if com_planilha else ""
         blocos.append(f"⚠️ *Atrasadas de meses anteriores:* {len(atrasadas)} parcela(s) · "
                       f"*{brl(sum(x['valor'] for x in atrasadas))}*{aba}\n" + por_advogado(atrasadas))
+    if pagar is not None:
+        tr, tp = sum(x["valor"] for x in itens), sum(x["valor"] for x in pagar)
+        bloco = (f"💸 *A pagar no mês:* {len(pagar)} despesa(s) · *{brl(tp)}*\n"
+                 f"📈 *Saldo previsto do mês:* {brl(tr)} − {brl(tp)} = *{brl(tr - tp)}*")
+        if pagar_atr:
+            bloco += (f"\n⚠️ Despesas atrasadas de meses anteriores: {len(pagar_atr)} · "
+                      f"{brl(sum(x['valor'] for x in pagar_atr))}")
+        blocos.append(bloco)
     if com_planilha:
-        blocos.append("_Planilha completa acima: aba do mês e aba de atrasadas (vencimento, cliente, valor, parcela, "
-                      "especificação e advogado). Pagamento recebido: é só avisar aqui que eu dou a baixa "
+        local = "acima" if not onde else f"no privado de {onde} (o grupo não aceitou o arquivo)"
+        abas = "abas Balanço, parcelas do mês, atrasadas e o que há a pagar" if pagar is not None else \
+            "aba do mês e aba de atrasadas"
+        blocos.append(f"_Planilha completa {local}: {abas}. Pagamento recebido: é só avisar aqui que eu dou a baixa "
                       "(ex.: dar baixa na parcela 3/12 do João, pagou 300 hoje por Pix)._")
     return "\n\n".join([topo] + blocos)
 
@@ -335,15 +457,28 @@ def ja_enviado(zaia, ano, mes):
 
 
 def id_whatsapp_do_grupo(zaia):
-    for c in (zaia.chamar("buscar_contatos", query=CONTATO_GRUPO) or {}).get("contatos", []):
-        dig = re.sub(r"\D", "", c.get("phone") or "")
-        if secretaria.norm(c.get("name")) == secretaria.norm(CONTATO_GRUPO) and len(dig) >= 18 and dig.startswith("1203"):
-            return dig
-    raise RuntimeError("contato do grupo não encontrado na Za.Ia")
+    """ID de WhatsApp do grupo (18 dígitos, 1203...). Procura pelo nome do contato e, se o grupo foi renomeado,
+    na lista de grupos da Za.Ia (qualquer campo com o ID)."""
+    for nome in NOMES_CONTATO_GRUPO:
+        for c in (zaia.chamar("buscar_contatos", query=nome) or {}).get("contatos", []):
+            dig = re.sub(r"\D", "", c.get("phone") or "")
+            if secretaria.norm(c.get("name")) == secretaria.norm(nome) and len(dig) >= 18 and dig.startswith("1203"):
+                return dig
+    try:
+        grupos = zaia.chamar("listar_grupos") or {}
+    except Exception:
+        grupos = {}
+    for g in grupos.get("grupos") or grupos.get("data") or []:
+        if GRUPO_FINANCEIRO not in str(g.get("id") or ""):
+            continue
+        for v in g.values():
+            dig = re.sub(r"\D", "", v) if isinstance(v, str) else ""
+            if len(dig) >= 18 and dig.startswith("1203"):
+                return dig
+    raise RuntimeError("ID do grupo não encontrado na Za.Ia")
 
 
-def enviar_planilha(zaia, conteudo, nome, legenda):
-    destino = id_whatsapp_do_grupo(zaia)
+def _subir_e_enviar(zaia, destino, conteudo, nome, legenda):
     prep = zaia.chamar("preparar_upload_midia", nomeArquivo=nome, mimetype=XLSX, tamanhoBytes=len(conteudo)) or {}
     # Sem User-Agent próprio, o Cloudflare da Za.Ia recusa o PUT do Python (HTTP 403, "error code: 1010").
     req = urllib.request.Request(prep["uploadUrl"], data=conteudo, method="PUT", headers={
@@ -354,27 +489,63 @@ def enviar_planilha(zaia, conteudo, nome, legenda):
                 nomeArquivo=nome, mimetype=XLSX, legenda=legenda)
 
 
+def _motivo(e):
+    return despachante.RE_TELEFONE_LOG.sub("[tel]", f"{type(e).__name__}: {e}")[:160]
+
+
+def enviar_planilha(zaia, conteudo, nome, legenda):
+    """Grupo (2 tentativas); se não der, o privado de cada advogado. Devolve None (foi ao grupo) ou
+    "Dra. Danielle, ..." (quem recebeu no privado). Ninguém aceitou: RuntimeError com o motivo."""
+    motivo = ""
+    for _ in range(2):
+        try:
+            _subir_e_enviar(zaia, id_whatsapp_do_grupo(zaia), conteudo, nome, legenda)
+            return None
+        except Exception as e:
+            motivo = _motivo(e)
+    _log(f"planilha não foi ao grupo ({motivo}); vai ao privado dos advogados")
+    foi = []
+    for quem, tel in PRIVADOS_ADVOGADOS.items():
+        try:
+            _subir_e_enviar(zaia, tel, conteudo, nome, legenda)
+            foi.append(quem)
+        except Exception as e:
+            motivo = _motivo(e)
+    if not foi:
+        raise RuntimeError(motivo)
+    return ", ".join(foi)
+
+
 def enviar(zaia, ej, ano, mes, previa=False, dry_run=False, so_planilha=False, hoje=None):
     hoje = hoje or datetime.now(BRT).date()
     itens, atrasadas = dados(ej, ano, mes, hoje)
-    nome = f"parcelas-a-receber-{ano}-{mes:02d}.xlsx"
-    conteudo = planilha_do_mes(itens, atrasadas, ano, mes)
-    _log(f"{rotulo_mes(ano, mes)}: {len(itens)} parcela(s) no mês, {len(atrasadas)} atrasada(s); "
-         f"planilha com {len(conteudo)} bytes")
+    try:
+        pagar, pagar_atr = dados_despesas(ej, ano, mes, hoje)
+    except Exception as e:  # sem as despesas, a planilha sai só com as receitas
+        _log(f"despesas não lidas ({_motivo(e)})")
+        pagar = pagar_atr = None
+    nome = f"balanco-financeiro-{ano}-{mes:02d}.xlsx"
+    conteudo = planilha_do_mes(itens, atrasadas, ano, mes, pagar, pagar_atr)
+    _log(f"{rotulo_mes(ano, mes)}: {len(itens)} parcela(s) no mês, {len(atrasadas)} atrasada(s), "
+         f"{'?' if pagar is None else len(pagar)} despesa(s) a pagar; planilha com {len(conteudo)} bytes")
     if dry_run:
         return itens, atrasadas, conteudo
-    com_planilha = False
-    if itens or atrasadas:
+    com_planilha, onde = False, None
+    try:
+        onde = enviar_planilha(zaia, conteudo, nome, cabecalho(ano, mes, previa).replace("*", ""))
+        com_planilha = True
+    except Exception as e:  # a lista em texto garante a entrega; o Dr. Lucas fica sabendo da falha (regra de 12/11)
+        _log(f"planilha não enviada a ninguém ({_motivo(e)}); vai a lista em texto")
         try:
-            enviar_planilha(zaia, conteudo, nome, cabecalho(ano, mes, previa).replace("*", ""))
-            com_planilha = True
-        except Exception as e:  # a lista em texto garante a entrega
-            motivo = despachante.RE_TELEFONE_LOG.sub("[tel]", f"{type(e).__name__}: {e}")[:160]
-            _log(f"planilha não enviada ao grupo ({motivo}); vai a lista em texto")
+            zaia.chamar("enviar_mensagem", assinatura="ia", numero=LUCAS_TEL, texto=(
+                f"⚠️ A planilha do balanço de {rotulo_mes(ano, mes)} não pôde ir como arquivo (a Za.Ia recusou "
+                "o envio no grupo e nos privados). A lista foi em texto no grupo Financeiro."))
+        except Exception:
+            pass
     if so_planilha:  # reenvio só do arquivo: o resumo e a lista já estão no grupo, nada mais sai
         return itens, atrasadas, conteudo
     zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO_FINANCEIRO,
-                texto=resumo(itens, atrasadas, ano, mes, previa, com_planilha))
+                texto=resumo(itens, atrasadas, ano, mes, previa, com_planilha, pagar, pagar_atr, onde))
     if not com_planilha:
         for parte in lista_texto(itens, atrasadas):
             zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=GRUPO_FINANCEIRO, texto=parte)

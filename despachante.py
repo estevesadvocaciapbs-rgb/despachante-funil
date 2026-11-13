@@ -2397,6 +2397,14 @@ def main():
             porteiro.rodada(zaia, datetime.now(timezone.utc), contagem, conversas_lidas=lidas)
         except Exception as erro:
             log(f"porteiro falhou: {type(erro).__name__}")
+        try:  # 13/11: o despachante grava no EasyJur as ordens 🤖 S aprovadas do Secretário geral
+            import agenda_robo
+            agenda_robo.rodada(zaia, easyjur_fn, datetime.now(timezone.utc), log, conversas_lidas=lidas,
+                               dry_run=DRY_RUN)
+        except OrcamentoEasyJur as erro:
+            _avisar_orcamento(zaia, erro)
+        except Exception as erro:
+            log(f"agenda do secretário falhou: {type(erro).__name__}")
     contagem["easyjur_no_plantao"] = ESTADO_EJ["chamadas"]
     log(f"resumo: {contagem}")
 

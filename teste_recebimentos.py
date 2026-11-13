@@ -21,8 +21,8 @@ class FakeEJ:
     """Como o EasyJur: a listagem não traz o advogado (só o filtro id_advogado); vencida vem com status "A"
     e também aparece no filtro "V"."""
 
-    def __init__(self, receitas, feriados=()):
-        self.receitas, self.feriados, self.chamadas = receitas, set(feriados), []
+    def __init__(self, receitas, feriados=(), despesas=()):
+        self.receitas, self.feriados, self.chamadas, self.despesas = receitas, set(feriados), [], list(despesas)
 
     def chamar(self, f, **a):
         self.chamadas.append(f)
@@ -32,15 +32,21 @@ class FakeEJ:
                   and ("id_advogado" not in a or x["_adv"] == a["id_advogado"])]
             return {"data": [{k: v for k, v in x.items() if k != "_adv"} for x in ok], "meta": {"total_pages": 1}}
         if f == "get_pessoa":
-            return {"data": {"nome": {1: "MARIA DA SILVA", 2: "joão souza"}[a["pessoa_id"]]}}
+            if a["pessoa_id"] == 344268:
+                raise RuntimeError("pessoa não encontrada")  # id de usuário, como no EasyJur
+            return {"data": {"nome": {1: "MARIA DA SILVA", 2: "joão souza", 3: "EQUATORIAL PARA"}[a["pessoa_id"]]}}
+        if f == "list_despesas":
+            ok = [x for x in self.despesas if x["datas"]["vencimento"] <= a["data_vencimento_fim"]]
+            return {"data": ok, "meta": {"total_pages": 1}}
         if f == "e_feriado":
             return {"data": {"e_feriado": a["data"] in self.feriados}}
         raise AssertionError(f)
 
 
 class FakeZ:
-    def __init__(self, grupo=None, midia_ok=True):
+    def __init__(self, grupo=None, midia_ok=True, com_contato=True):
         self.grupo, self.midia_ok, self.enviadas, self.midias = grupo or [], midia_ok, [], []
+        self.com_contato, self.privado = com_contato, []
 
     def chamar(self, f, **a):
         if f == "ler_grupo":
@@ -51,8 +57,15 @@ class FakeZ:
             self.grupo.append({"sender": "AGENT", "content": "*Annie*:\n" + a["texto"]})
             return {}
         if f == "buscar_contatos":
+            if not self.com_contato:
+                return {"contatos": []}
             return {"contatos": [{"name": "Cynthia- Setor financeiro", "phone": None},
                                  {"name": "Financeiro Escritório", "phone": "120363000000000001"}]}
+        if f == "listar_grupos":
+            return {"grupos": []}
+        if f == "enviar_mensagem":
+            self.privado.append((a["numero"], a["texto"]))
+            return {}
         if f == "preparar_upload_midia":
             if not self.midia_ok:
                 raise RuntimeError("grupo não aceita mídia")
@@ -114,7 +127,7 @@ assert r.rodada(z, ej, datetime(2026, 11, 2, 12, tzinfo=timezone.utc)) is False 
 assert r.rodada(z, ej, datetime(2026, 11, 3, 11, 30, tzinfo=timezone.utc)) is True
 assert len(z.midias) == 1 and z.midias[0]["numero"] == "120363000000000001" and z.midias[0]["assinatura"] == "ia"
 txt = z.enviadas[0]
-assert txt.startswith("📊 *Parcelas a receber — novembro/2026*") and "R$ 1.185,08" in txt
+assert txt.startswith("📊 *Balanço financeiro — novembro/2026*") and "R$ 1.185,08" in txt
 assert "• 23/11 a 29/11: R$ 135,08 (1)" in txt
 assert "Por advogado:\n• Dra. Danielle: R$ 750,00 (1)\n• Dra. Fernanda: R$ 135,08 (1)\n• Sem advogado: R$ 300,00 (1)" in txt
 assert '⚠️ *Atrasadas de meses anteriores:* 2 parcela(s) · *R$ 450,00* (aba "Atrasadas" da planilha)' in txt
@@ -125,7 +138,7 @@ print("OK — envia no 1º dia útil, uma vez só, com totais por semana, por ad
 # Prévia não conta como o envio oficial
 z = FakeZ()
 r.enviar(z, FakeEJ(RECEITAS), 2026, 11, previa=True, hoje=HOJE)
-assert z.enviadas[0].startswith("📊 *Parcelas a receber — novembro/2026* (prévia)")
+assert z.enviadas[0].startswith("📊 *Balanço financeiro — novembro/2026* (prévia)")
 assert not r.ja_enviado(z, 2026, 11)
 print("OK — prévia não bloqueia o envio do mês")
 
@@ -133,6 +146,7 @@ print("OK — prévia não bloqueia o envio do mês")
 z = FakeZ(midia_ok=False)
 r.enviar(z, FakeEJ(RECEITAS), 2026, 11, hoje=HOJE)
 assert len(z.enviadas) == 2 and "Planilha completa" not in z.enviadas[0] and "(aba" not in z.enviadas[0]
+assert len(z.privado) == 1 and z.privado[0][0] == r.LUCAS_TEL and "não pôde ir como arquivo" in z.privado[0][1]
 assert z.enviadas[1].startswith("05/11 · *Maria Da Silva* · R$ 750,00 · parcela 4/6 · Honorários — Êxito · Dra. Danielle · Pix")
 assert "⚠️ *Atrasadas de meses anteriores*\n23/09/2026 (41 dias) · *Maria Da Silva* · R$ 150,00" in z.enviadas[1]
 print("OK — sem planilha, a lista sai em texto")
@@ -147,3 +161,44 @@ r.urllib.request.urlopen = lambda req, timeout=0: heads.append(req.get_header("U
 r.enviar(FakeZ(), FakeEJ(RECEITAS), 2026, 11, so_planilha=True, hoje=HOJE)
 assert heads and heads[0].startswith("despachante-funil/")  # sem isso o Cloudflare da Za.Ia recusa o upload
 print("OK — reenvio só da planilha, com identidade própria no upload")
+
+
+# Despesas: aba Balanço (a receber x a pagar), abas do que há a pagar, saldo no resumo
+def desp(i, venc, valor, forn, plano="3.2.03 - Energia elétrica", status="Aberto", desc="Conta de energia"):
+    return {"id": i, "status": status, "descricao": desc, "id_fornecedor": forn, "forma_pagamento": "Boleto",
+            "plano_contas": {"id": 1, "descricao": plano}, "datas": {"vencimento": venc}, "valores": {"valor": valor}}
+
+
+DESPESAS = [desp(20, "2026-11-10", 279.17, 3),
+            desp(21, "2026-11-20", 225.0, 344268, plano="3.4.03 - Repasses de Honorários Advocatícios Associados",
+                 desc="Repasse 1/1 receita 5170266"),
+            desp(22, "2026-10-19", 100.0, 3),                          # atrasada
+            desp(23, "2026-11-15", 999.0, 3, status="Pago")]           # paga: fora
+ej = FakeEJ(RECEITAS, despesas=DESPESAS)
+pagar, pagar_atr = r.dados_despesas(ej, 2026, 11, HOJE)
+assert [x["id"] for x in pagar] == [20, 21] and [x["id"] for x in pagar_atr] == [22]
+assert pagar[0]["cliente"] == "Equatorial Para" and pagar[1]["cliente"] == "Dr. Lucas" and pagar[0]["espec"] == "Energia elétrica"
+bal = r.balanco(itens, atrasadas, pagar, pagar_atr, 2026, 11)
+assert bal[-4] == ("TOTAL de novembro/2026", 1185.08, 504.17), bal
+xlsx = r.planilha_do_mes(itens, atrasadas, 2026, 11, pagar, pagar_atr)
+with zipfile.ZipFile(io.BytesIO(xlsx)) as zz:
+    for n in zz.namelist():
+        if n.endswith(".xml") or n.endswith(".rels"):
+            xml.dom.minidom.parseString(zz.read(n))
+    livro = zz.read("xl/workbook.xml").decode()
+    b1 = zz.read("xl/worksheets/sheet1.xml").decode()
+assert livro.index('name="Balanço"') < livro.index('name="Novembro 2026"') and 'name="A pagar novembro"' in livro
+assert "<f>B" in b1 and "Saldo previsto" in b1
+z = FakeZ()
+r.enviar(z, ej, 2026, 11, hoje=HOJE)
+txt = z.enviadas[0]
+assert "💸 *A pagar no mês:* 2 despesa(s) · *R$ 504,17*" in txt and "= *R$ 680,91*" in txt, txt
+assert "abas Balanço" in txt and z.midias[0]["nomeArquivo"] == "balanco-financeiro-2026-11.xlsx"
+print("OK — balanço com o que há a receber e a pagar no mês, saldo previsto no resumo")
+
+# Grupo sem o contato (renomeado): o arquivo vai ao privado dos três advogados e o resumo diz onde
+z = FakeZ(com_contato=False)
+r.enviar(z, ej, 2026, 11, hoje=HOJE)
+assert [m["numero"] for m in z.midias] == list(r.PRIVADOS_ADVOGADOS.values())
+assert "no privado de Dra. Danielle, Dra. Fernanda, Dr. Lucas" in z.enviadas[0] and len(z.enviadas) == 1
+print("OK — grupo recusou o arquivo: vai ao privado dos advogados, sem cair para o texto")

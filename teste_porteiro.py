@@ -197,30 +197,62 @@ class FakeZEnvio(FakeZ):
         super().__init__(grupos=grupos)
         self.enviadas = []
     def chamar(self, f, **a):
-        if f == "enviar_mensagem":  # 12/11: a lista da manhã vai ao privado do Dr. Lucas
-            assert a["assinatura"] == "ia" and a["numero"] == p.LUCAS_TEL
-            self.enviadas.append(a["texto"])
-            self.privados.setdefault(p.LUCAS_TEL, []).append(
+        if f == "enviar_mensagem":
+            assert a["assinatura"] == "ia"
+            self.enviadas.append((a["numero"], a["texto"]))
+            self.privados.setdefault(a["numero"], []).append(
                 mg("AGENT", "*Annie*:\n" + a["texto"], "2026-10-22T11:06:00.000Z"))
             return {}
         if f == "enviar_mensagem_grupo":
-            raise AssertionError("a lista da manhã não vai mais ao grupo")
+            raise AssertionError("aviso e lembrete não vão ao grupo")
         return super().chamar(f, **a)
 
+DANI_TEL = "5594992048054"
+tipos = {c: (t, tel) for c, _, t, tel in p.pendencias_detalhadas(GRUPO18, manha)}
+assert tipos["F4 de 21/10"] == ("dado", DANI_TEL) and tipos["F5 de 21/10"][0] == "fila", tipos
+assert {c: t for c, _, t, _ in p.pendencias_detalhadas(GRUPO18, _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc))}["F5 de 21/10"] == "falha"
+
+# 13/11: a lista da manhã ao Dr. Lucas só traz FALHA (o caso F30/Graciele de 12/11 era só "esperando confirmação")
 novo_plantao(); p._estado["aviso_fin"] = None
 z = FakeZEnvio({"claude-grupo-18": list(GRUPO18)})
-p.avisar_pendencias(z, z.grupos["claude-grupo-18"], _dt(2026, 10, 22, 10, 30, tzinfo=timezone.utc))  # 07:30: cedo
-assert not z.enviadas
 p.avisar_pendencias(z, z.grupos["claude-grupo-18"], manha)
-assert len(z.enviadas) == 1 and z.enviadas[0].startswith("⏰ *Pendências do financeiro — 22/10*")
-assert "🧾 F" not in z.enviadas[0].split("\n_")[0] and not p.RE_DESP_APROVADA.search(z.enviadas[0])  # não confunde a fila
-p._estado["aviso_fin"] = None  # outro plantão no mesmo dia: acha o aviso no grupo e não repete
-p.avisar_pendencias(z, z.grupos["claude-grupo-18"], manha.replace(hour=13))
+assert not z.enviadas  # só rascunho parado e despesa na fila: nada ao Dr. Lucas
+p._estado["aviso_fin"] = None
+amanha_dt = _dt(2026, 10, 23, 11, 5, tzinfo=timezone.utc)
+p.avisar_pendencias(z, z.grupos["claude-grupo-18"], amanha_dt)
+assert len(z.enviadas) == 1 and z.enviadas[0][0] == p.LUCAS_TEL
+assert z.enviadas[0][1].startswith("⏰ *Pendências do financeiro — 23/10*") and "computador do escritório" in z.enviadas[0][1]
+assert "F4 de 21/10" not in z.enviadas[0][1]  # rascunho esperando dado não é falha
+p._estado["aviso_fin"] = None  # outro plantão no mesmo dia: acha o aviso no privado e não repete
+p.avisar_pendencias(z, z.grupos["claude-grupo-18"], amanha_dt.replace(hour=13))
 assert len(z.enviadas) == 1
 p._estado["aviso_fin"] = None
 p.avisar_pendencias(z, z.grupos["claude-grupo-18"], _dt(2026, 10, 24, 11, 5, tzinfo=timezone.utc))  # sábado
 assert len(z.enviadas) == 1
-print("OK — aviso da manhã: aprovado sem 🧾 e rascunho parado, uma vez por dia útil")
+print("OK — lista da manhã ao Dr. Lucas só com falhas, uma vez por dia útil")
+
+# Rascunho parado há 2 h: quem pediu recebe o lembrete no privado; falta de dado vai com cópia ao Dr. Lucas
+z = FakeZEnvio({"claude-grupo-18": list(GRUPO18)})
+p._estado["lembrados"] = set()
+p.lembrar_pedintes(z, z.grupos["claude-grupo-18"], _dt(2026, 10, 22, 10, 30, tzinfo=timezone.utc))  # 07:30: cedo
+assert not z.enviadas
+p.lembrar_pedintes(z, z.grupos["claude-grupo-18"], manha)
+destinos = [t for t, _ in z.enviadas]
+assert destinos == [DANI_TEL, p.LUCAS_TEL], destinos
+assert z.enviadas[0][1].startswith(p.LEMBRETE) and "*F4 de 21/10*" in z.enviadas[0][1] and "OK F[n]" in z.enviadas[0][1]
+assert "cópia" in z.enviadas[1][1]
+p.lembrar_pedintes(z, z.grupos["claude-grupo-18"], manha.replace(hour=14))
+assert len(z.enviadas) == 2  # uma vez por F
+p._estado["lembrados"] = set()  # outro plantão: acha o lembrete no privado e não repete
+p.lembrar_pedintes(z, z.grupos["claude-grupo-18"], manha.replace(hour=15))
+assert len(z.enviadas) == 2
+# rascunho completo (sem ⟨ ⟩) esperando OK: só quem pediu, sem cópia
+_g = [mg("AGENT", "*Annie*:\n💰 *LANÇAMENTO F30* — Receita no EasyJur\nPedido de: Dra. Fernanda (grupo Financeiro)\n"
+         "Cliente: Graciele Silva Mendes (id 1)\n👉 Confirme: *OK F30*", "2026-11-12T13:00:00.000Z")]
+z = FakeZEnvio({"claude-grupo-18": _g}); p._estado["lembrados"] = set()
+p.lembrar_pedintes(z, _g, _dt(2026, 11, 12, 16, 30, tzinfo=timezone.utc))
+assert [t for t, _ in z.enviadas] == [FERN] and "esperando confirmação" in z.enviadas[0][1]
+print("OK — lembrete do rascunho parado vai a quem pediu (cópia ao Dr. Lucas só quando falta dado)")
 
 # 23/10: pedido de mensagem programada ao cliente, escrito do jeito natural, também acorda as rotinas
 import porteiro as _p

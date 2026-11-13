@@ -6,6 +6,10 @@ on:
     # e uma vez por mês (procura o resumo no grupo Financeiro Escritório), então repetir não duplica.
     - cron: "0 11 1-7 * *"
     - cron: "0 14 1-7 * *"
+  # Reenvio sem clique: um commit em recebimentos-reenvio.txt (1ª linha = AAAA-MM) manda a planilha desse mês.
+  push:
+    branches: [main]
+    paths: ["recebimentos-reenvio.txt"]
   workflow_dispatch:
     inputs:
       mes:
@@ -33,11 +37,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Enviar planilha de parcelas ao grupo Financeiro Escritório
+      - name: Enviar o balanço do mês ao grupo Financeiro Escritório
         env:
           ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
           EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
           MES: ${{ inputs.mes }}
           PREVIA: ${{ inputs.previa && '--previa' || '' }}
           PYTHONUNBUFFERED: "1"
-        run: python recebimentos.py $MES $PREVIA
+          EVENTO: ${{ github.event_name }}
+        run: |
+          if [ "$EVENTO" = "push" ]; then MES=$(head -1 recebimentos-reenvio.txt | tr -dc '0-9-'); PREVIA=""; fi
+          python recebimentos.py $MES $PREVIA

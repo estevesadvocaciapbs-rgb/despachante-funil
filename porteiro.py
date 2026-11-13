@@ -84,7 +84,7 @@ def pedido_financeiro(texto):
 
 _estado = {"ultima": None, "desde": None, "visto": {}, "chamado_em": None, "pendente": False,
            "fin_chamado_em": None, "fin_pendente": False, "despesas_em": None, "despesas": None,
-           "aviso_fin": None}
+           "aviso_fin": None, "lembrados": set()}
 
 
 def _log(msg):
@@ -275,9 +275,33 @@ def _quem(texto):
 ROBO_SEM_SINAL = timedelta(hours=24)
 
 
+RE_PEDIDO_DE = re.compile(r"Pedido de:\s*\*?([^\n(·*]+)")
+LEMBRETE = "⏰ *Falta sua resposta no financeiro"
+HORA_LEMBRETE, HORA_LEMBRETE_FIM = 8, 20
+# Quem pediu -> privado (13/11): o lembrete do rascunho parado vai a quem pediu, não ao Dr. Lucas.
+TEL_ADVOGADO = {"danielle": "5594992048054", "dani": "5594992048054", "fernanda": "5594991742534",
+                "lucas": LUCAS_TEL}
+
+
+def tel_de_quem_pediu(texto):
+    m = RE_PEDIDO_DE.search(texto or "")
+    nome = norm(m.group(1)) if m else ""
+    for chave, tel in TEL_ADVOGADO.items():
+        if re.search(rf"\b{chave}\b", nome):
+            return tel
+    return LUCAS_TEL  # comprovante de cliente ou pedido sem advogado identificado: o financeiro é do Dr. Lucas
+
+
 def pendencias_financeiro(msgs, agora):
-    """[(chave, linha)] do que está parado no financeiro: despesa aprovada que nenhum lançamento das 22h
-    confirmou (sem "🧾") e rascunho F sem resposta de advogado nem decisão (✅/⏭️/🧾) há mais de 2 h."""
+    """[(chave, linha)] — ver pendencias_detalhadas."""
+    return [(c, l) for c, l, _, _ in pendencias_detalhadas(msgs, agora)]
+
+
+def pendencias_detalhadas(msgs, agora):
+    """[(chave, linha, tipo, telefone de quem pediu)] do que está parado no financeiro: despesa aprovada que
+    nenhum lançamento confirmou (sem "🧾") e rascunho F sem resposta de advogado nem decisão (✅/⏭️/🧾) há mais
+    de 2 h. tipo: "falha" (robô sem sinal), "fila" (aprovada, entra no próximo lançamento), "dado" (rascunho
+    com ⟨ ⟩: não dá para aprovar sem o dado) e "confirmacao" (rascunho completo esperando OK/EDITAR/NÃO)."""
     msgs = sorted((m for m in msgs if agora - ler_iso(m["createdAt"]) <= JANELA_DESPESAS),
                   key=lambda m: m["createdAt"])
     itens = []
@@ -305,11 +329,12 @@ def pendencias_financeiro(msgs, agora):
             if any("Robô do EasyJur" in (x.get("content") or "") and agora - ler_iso(x["createdAt"]) < ROBO_SEM_SINAL
                    for x in msgs):
                 continue
-            estado = ("⚠️ aprovada e *ainda não lançada* (já devia ter entrado) e o robô do EasyJur não deu sinal "
-                      "há 1 dia → 👉 confira se o computador do escritório está ligado e com internet")
+            estado, tipo = ("⚠️ aprovada e *ainda não lançada* (já devia ter entrado) e o robô do EasyJur não deu "
+                            "sinal há 1 dia → 👉 confira se o computador do escritório está ligado e com internet"), "falha"
         else:
-            estado = "aprovada, *ainda não lançada*: entra no próximo lançamento automático (8h30)"
-        itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}"))
+            estado, tipo = "aprovada, *ainda não lançada*: entra no próximo lançamento automático (8h30)", "fila"
+        itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}", tipo,
+                      tel_de_quem_pediu(m.get("content"))))
     ultimo = {}
     for i, m in enumerate(msgs):  # o rascunho mais recente de cada F (o "✏️ atualizado" substitui o anterior)
         if m.get("sender") == "CONTACT":
@@ -318,7 +343,7 @@ def pendencias_financeiro(msgs, agora):
             ultimo[(int(n), f"{ler_iso(m['createdAt']).astimezone(BRT):%d/%m}")] = i
     for (n, dia), i in sorted(ultimo.items(), key=lambda kv: kv[1]):
         m, chave = msgs[i], f"F{n} de {dia}"
-        if agora - ler_iso(m["createdAt"]) < ESPERA_RASCUNHO or any(c == chave for c, _ in itens):
+        if agora - ler_iso(m["createdAt"]) < ESPERA_RASCUNHO or any(it[0] == chave for it in itens):
             continue
         fechou = re.compile(rf"(?:✅|⏭️|🧾)\s*\*?F{n}\b", re.I)
         respondeu = re.compile(rf"\b(?:ok|editar|nao|não)\s*f\s*{n}\b", re.I)
@@ -329,19 +354,63 @@ def pendencias_financeiro(msgs, agora):
         quem = _quem(texto)
         if "⟨ ⟩" in texto:
             falta = RE_FALTA.search(texto)
-            estado = (f"esperando dado ({'falta ' + falta.group(1).strip() if falta else 'campo com ⟨ ⟩'}) → "
-                      f"*EDITAR F{n}: dado que falta*")
+            estado, tipo = (f"esperando dado ({'falta ' + falta.group(1).strip() if falta else 'campo com ⟨ ⟩'}) → "
+                            f"*EDITAR F{n}: dado que falta*"), "dado"
         else:
-            estado = f"esperando confirmação → *OK F{n}* · *EDITAR F{n}: ajuste* · *NÃO F{n}*"
-        itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}"))
+            estado, tipo = f"esperando confirmação → *OK F{n}* · *EDITAR F{n}: ajuste* · *NÃO F{n}*", "confirmacao"
+        itens.append((chave, f"• *{chave}*{' — ' + quem if quem else ''}: {estado}", tipo, tel_de_quem_pediu(texto)))
     return itens
 
 
-def avisar_pendencias(zaia, msgs, agora):
-    """Uma vez por dia útil, a partir das 8h, lista no PRIVADO do Dr. Lucas o que está parado no financeiro.
+def _privado(zaia, tel):
+    conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=tel) or {}).get("conversa")
+    return (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []) if conv else []
 
-    Regra da usuária (12/11): falha, dúvida e pendência de lançamento vão ao Dr. Lucas, no privado; o grupo do
-    financeiro fica com os rascunhos e as confirmações."""
+
+def lembrar_pedintes(zaia, msgs, agora):
+    """Rascunho F parado há mais de 2 h no grupo: lembra QUEM PEDIU, no privado dele, uma vez por F (13/11).
+
+    Regra da usuária (13/11): a confirmação continua no grupo Financeiro; quem pediu recebe no privado o que
+    falta para finalizar. O Dr. Lucas só recebe cópia do que não dá para aprovar (falta dado) — falhas vão a ele
+    pela lista da manhã e pelo robô."""
+    local = agora.astimezone(BRT)
+    if not HORA_LEMBRETE <= local.hour < HORA_LEMBRETE_FIM:
+        return
+    por_tel = {}
+    for chave, linha, tipo, tel in pendencias_detalhadas(msgs, agora):
+        if tipo not in ("dado", "confirmacao") or chave in _estado["lembrados"]:
+            continue
+        por_tel.setdefault(tel, []).append((chave, linha))
+        if tipo == "dado" and tel != LUCAS_TEL:
+            por_tel.setdefault(LUCAS_TEL, []).append((chave, linha + " _(cópia: não dá para aprovar sem o dado)_"))
+    for tel, itens in por_tel.items():
+        try:
+            priv = _privado(zaia, tel)
+        except Exception as erro:
+            _log(f"lembrete do financeiro: privado não lido ({type(erro).__name__})")
+            continue
+        ja = [c for c, _ in itens if any(m.get("sender") != "CONTACT" and LEMBRETE in (m.get("content") or "")
+                                         and f"*{c}*" in (m.get("content") or "") for m in priv)]
+        novos_itens = [(c, l) for c, l in itens if c not in ja]
+        _estado["lembrados"].update(ja)
+        if not novos_itens:
+            continue
+        texto = (f"{LEMBRETE}*\n" + "\n".join(l for _, l in novos_itens)
+                 + "\n_O rascunho está no grupo Financeiro Escritório. Responda lá (ou aqui mesmo) com o código: "
+                 "OK F[n] para lançar · EDITAR F[n]: ajuste · NÃO F[n] para descartar. A confirmação sai no grupo._")
+        try:
+            zaia.chamar("enviar_mensagem", assinatura="ia", numero=tel, texto=texto)
+            _estado["lembrados"].update(c for c, _ in novos_itens)
+            _log(f"lembrete do financeiro: {len(novos_itens)} item(ns) a quem pediu")
+        except Exception as erro:
+            _log(f"lembrete do financeiro não enviado: {type(erro).__name__}")
+
+
+def avisar_pendencias(zaia, msgs, agora):
+    """Uma vez por dia útil, a partir das 8h, lista no PRIVADO do Dr. Lucas as FALHAS do financeiro.
+
+    Regra da usuária (12/11, ajustada em 13/11): só falha e o que não dá para lançar vão ao Dr. Lucas; rascunho
+    esperando confirmação fica no grupo e quem pediu é lembrado no privado (lembrar_pedintes)."""
     local = agora.astimezone(BRT)
     hoje = local.date()
     if local.weekday() >= 5 or not HORA_AVISO <= local.hour < HORA_AVISO_FIM or _estado["aviso_fin"] == hoje:
@@ -356,7 +425,7 @@ def avisar_pendencias(zaia, msgs, agora):
     if any(m.get("sender") != "CONTACT" and _sem_assinatura(m.get("content")).startswith(cab) for m in priv + msgs):
         _estado["aviso_fin"] = hoje
         return
-    itens = pendencias_financeiro(msgs, agora)
+    itens = [(c, l) for c, l, tipo, _ in pendencias_detalhadas(msgs, agora) if tipo == "falha"]
     _estado["aviso_fin"] = hoje
     if not itens:
         return
@@ -385,6 +454,7 @@ def atualizar_despesas(zaia, agora):
         _log(f"despesas: grupo não lido: {type(erro).__name__}")
         return
     avisar_pendencias(zaia, msgs, agora)
+    lembrar_pedintes(zaia, msgs, agora)
     pend = despesas_pendentes(msgs, agora)
     if pend == _estado["despesas"]:
         return
