@@ -23,7 +23,7 @@ OPS = [op(1, "Tráfego pago", "1", "Nereu Bonfim"), op(2, "Tráfego pago", "5", 
 ANTIGA = op(9, "Tráfego pago", "1", "Rogério", data="2026-11-05")
 AGENDA = [ag(10, "2026-11-09", "C", "Rogério", oport=9, cad="2026-11-06"),
           ag(11, "2026-11-09", "S", "Wan Lucia", cad="2026-11-05"),
-          ag(12, "2026-11-11", "A", "", hora="14:00", cad="2026-11-09"),
+          dict(ag(12, "2026-11-11", "A", "", hora="14:00", cad="2026-11-09"), descricao="Atendimento Érica, família.\n"),
           ag(13, "2026-11-12", "C", "Suane Lopes", hora="00:00", processo=55, pub="225"),  # publicação: fora
           ag(14, "2026-11-12", "C", "Faby Aguiar", oport=3, cad="2026-11-11"),
           ag(15, "2026-11-13", "A", "Moisés Neto", oport=1, cad="2026-11-13", hora="18:30")]  # ainda vai acontecer
@@ -89,12 +89,12 @@ z = FakeZ(limite=2)
 msg = f.rodada(z, ej, SEXTA_1745)
 assert z.enviadas == [msg] and msg.startswith("📊 *Funil da semana (09/11 a 13/11)*")
 assert "👥 *Leads novos no WhatsApp* 24" in msg and "(mais 49 contatos antigos" in msg
-assert "📝 *Casos triados* 4" in msg
+assert "📝 *Casos triados* 4 (tráfego pago 2, indicação 1, sem origem marcada 1)" in msg
 assert "📅 *Reuniões agendadas na semana* 3" in msg  # 12, 14, 15 (a 10 e a 11 foram cadastradas antes)
 assert "🗓️ *Reuniões marcadas para a semana* 5" in msg  # a da publicação fica fora
 assert "✅ Realizadas 2" in msg and "❌ Canceladas 1 (Wan Lucia)" in msg
-assert "❔ Sem baixa no EasyJur 1 (sem cliente no EasyJur 11/11)" in msg and "⏳ Ainda vão acontecer 1" in msg
-assert "🤝 *Contratos fechados* 1\nErica Ralane (outros, Fernanda)" in msg and "🚫 *Não fecharam* 2" in msg
+assert "❔ Sem baixa no EasyJur 1 (\"Atendimento Érica\" 11/11)" in msg and "⏳ Ainda vão acontecer 1" in msg
+assert "🤝 *Contratos fechados* 1\nErica Ralane (sem origem marcada, Fernanda)" in msg and "🚫 *Não fecharam* 2" in msg
 assert "Lead novo para reunião agendada 12%" in msg and "Reunião marcada para realizada 40%" in msg
 assert "Reunião realizada para contrato 50%" in msg
 # tráfego pago: triados 2 (Nereu, Fabricia), agendada 1 (Moisés), marcadas 2 (Rogério da semana anterior + Moisés)

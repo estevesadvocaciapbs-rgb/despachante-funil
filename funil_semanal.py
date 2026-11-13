@@ -78,8 +78,7 @@ def _nome(it):
     n = (it.get("nome_cliente") or "").strip()
     if n:
         return n.split()[0].title() if len(n.split()) == 1 else " ".join(n.split()[:2]).title()
-    desc = re.split(r"[.,;
-(]", re.sub(r"<[^>]+>", " ", it.get("descricao") or ""))[0].strip()
+    desc = re.split(r"[.,;\n(]", re.sub(r"<[^>]+>", " ", it.get("descricao") or ""))[0].strip()
     return f"\"{desc[:35]}\"" if desc else "sem cliente no EasyJur"
 
 
