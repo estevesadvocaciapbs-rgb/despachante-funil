@@ -20,6 +20,7 @@ BRT = timezone(timedelta(hours=-3))
 GRUPO_FIRMA = "claude-grupo-1"
 SEXTA, HORA_ENVIO = 4, (17, 30)
 ORIGENS = ("Tráfego pago", "Indicação", "Outros")
+ROTULO = {"Tráfego pago": "tráfego pago", "Indicação": "indicação", "Outros": "sem origem marcada"}
 
 
 def _log(msg):
@@ -77,7 +78,9 @@ def _nome(it):
     n = (it.get("nome_cliente") or "").strip()
     if n:
         return n.split()[0].title() if len(n.split()) == 1 else " ".join(n.split()[:2]).title()
-    return "sem cliente no EasyJur"
+    desc = re.split(r"[.,;
+(]", re.sub(r"<[^>]+>", " ", it.get("descricao") or ""))[0].strip()
+    return f"\"{desc[:35]}\"" if desc else "sem cliente no EasyJur"
 
 
 def _nome_dia(it):
@@ -148,7 +151,12 @@ def _fechado(o):
     cli = ((o.get("cliente_info") or {}).get("nome") or "").split()
     adv = ((o.get("responsavel_info") or {}).get("nome") or "").split()
     nome = " ".join(cli[:2]).title() if cli else "sem nome"
-    return f"{nome} ({origem(o.get('nome')).lower()}{', ' + adv[0].title() if adv else ''})"
+    return f"{nome} ({ROTULO[origem(o.get('nome'))]}{', ' + adv[0].title() if adv else ''})"
+
+
+def _por_origem(po, chave):
+    partes = [f"{ROTULO[o]} {po[o][chave]}" for o in ORIGENS if po[o][chave]]
+    return f" ({', '.join(partes)})" if partes else ""
 
 
 def texto(d, ini, fim):
@@ -156,7 +164,7 @@ def texto(d, ini, fim):
     linhas = [cabecalho(ini, fim), "",
               f"👥 *Leads novos no WhatsApp* {d['novos']}",
               f"(mais {d['reengajados']} contatos antigos que voltaram a falar)", "",
-              f"📝 *Casos triados* {len(d['triados'])}",
+              f"📝 *Casos triados* {len(d['triados'])}" + _por_origem(d["por_origem"], "triados"),
               f"📅 *Reuniões agendadas na semana* {len(d['agendadas'])}", "",
               f"🗓️ *Reuniões marcadas para a semana* {n_marc}",
               f"✅ Realizadas {n_real}"]
@@ -182,7 +190,7 @@ def texto(d, ini, fim):
                f"Triados {t['triados']}, reuniões agendadas {t['agendadas']}, marcadas para a semana {t['marcadas']}, "
                f"realizadas {t['realizadas']}, canceladas {t['canceladas']}, contratos {t['fechados']}",
                "", "ℹ️ A origem vem do nome da oportunidade no EasyJur (\"Tráfego pago\", \"Indicação\"). "
-               "Oportunidade sem esse nome entra como outros. Reunião sem baixa no EasyJur não dá para saber se "
+               "Oportunidade sem esse nome entra como sem origem marcada. Reunião sem baixa no EasyJur não dá para saber se "
                "aconteceu, por isso vale concluir ou cancelar no sistema."]
     return "\n".join(linhas)
 
