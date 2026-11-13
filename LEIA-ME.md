@@ -245,6 +245,14 @@ com IA. Cada comando é executado uma vez: a resposta leva a marca `#número` da
 mensagem do comando. Áudio não é tratado aqui. Só baixa a conversa inteira
 quando chegou mensagem nova (confere antes a hora da última mensagem).
 
+## Etiqueta Tráfego Pago (`origem_trafego.py`, desde 13/11/2026)
+
+A cada 10 minutos, no plantão, o despachante lê as conversas novas dos últimos 8 dias e põe a etiqueta "Tráfego
+Pago" (claude-etiqueta-14) no lead que chegou com a mensagem pronta do anúncio ("Olá! Quero sair do meu emprego e
+receber todos os meus benefícios", "saber mais sobre rescisão indireta", o texto padrão do Meta) ou que diz ter visto
+o anúncio. Só acrescenta a etiqueta. Anúncio novo com outra mensagem pronta: incluir em `FRASES_PRONTAS`. O funil
+da semana conta os leads do tráfego por essa etiqueta.
+
 ## Funil da semana (`funil_semanal.py`, desde 13/11/2026)
 
 Toda sexta às 17h30 de Belém (workflow "Funil da semana", com repetições às 18h e 18h30 que não duplicam), vai ao

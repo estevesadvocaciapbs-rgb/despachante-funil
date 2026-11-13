@@ -2302,6 +2302,11 @@ def main():
                             None if DRY_RUN else porteiro.avisar_financeiro)
     except Exception as erro:
         log(f"comprovantes falhou: {type(erro).__name__}: {erro}")
+    try:  # lead que chegou pelo anúncio (mensagem pronta ou "vi o anúncio"): etiqueta Tráfego Pago (13/11)
+        import origem_trafego
+        origem_trafego.rodada(zaia, datetime.now(timezone.utc), contagem, sys.modules[__name__], DRY_RUN)
+    except Exception as erro:
+        log(f"etiqueta de tráfego falhou: {type(erro).__name__}")
     try:
         retomar_conversas(zaia, agora, contagem)
     except Exception as erro:  # a retomada nunca pode derrubar a oferta

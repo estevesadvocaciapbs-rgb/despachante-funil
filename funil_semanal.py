@@ -18,6 +18,7 @@ import secretaria
 
 BRT = timezone(timedelta(hours=-3))
 GRUPO_FIRMA = "claude-grupo-1"
+RE_TEL = re.compile(r"\b55\d{10,11}\b")
 SEXTA, HORA_ENVIO = 4, (17, 30)
 ORIGENS = ("Tráfego pago", "Indicação", "Outros")
 ROTULO = {"Tráfego pago": "tráfego pago", "Indicação": "indicação", "Outros": "sem origem marcada"}
@@ -94,6 +95,16 @@ def dados(zaia, ej, ini, fim, agora):
     iso = lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
     rel = _z(zaia, "relatorio_atendimento", periodo={"inicio": iso(p_ini), "fim": iso(p_fim)}) or {}
     contatos = rel.get("contatos") or {}
+    # leads do anúncio: etiqueta "Tráfego Pago" posta pelo despachante (origem_trafego.py, desde 13/11)
+    marcados, offset = [], 0
+    while offset < 500:
+        r = _z(zaia, "listar_contatos", etiqueta="Tráfego Pago", limit=100, offset=offset) or {}
+        marcados += r.get("contatos") or []
+        if len(r.get("contatos") or []) < 100:
+            break
+        offset += 100
+    tel_trafego = {re.sub(r"\D", "", c.get("phone") or "") for c in marcados} - {""}
+    novos_trafego = sum(1 for c in marcados if iso(p_ini) <= (c.get("createdAt") or "") < iso(p_fim))
 
     criadas = _todas(ej, "list_oportunidades", data_inicio=di, data_fim=df)
     fechadas = _todas(ej, "list_oportunidades", status=["4"], tipo_data="encerramento", data_inicio=di, data_fim=df)
@@ -110,7 +121,16 @@ def dados(zaia, ej, ini, fim, agora):
         antes = (ini - timedelta(days=60)).isoformat()
         for o in _todas(ej, "list_oportunidades", paginas=2, data_inicio=antes, data_fim=df, sort="-data"):
             oport.setdefault(o["id"], o)
-    org = lambda it: origem((oport.get(it.get("oportunidade")) or {}).get("nome"))  # noqa: E731
+    tel_de = lambda it: (RE_TEL.search(it.get("descricao") or "") or [None])[0]  # noqa: E731
+    oport_tel = {i.get("oportunidade"): tel_de(i) for i in marcadas + agendadas if i.get("oportunidade") and tel_de(i)}
+
+    def org_op(o):
+        return "Tráfego pago" if oport_tel.get(o.get("id")) in tel_trafego else origem(o.get("nome"))
+
+    def org(it):
+        if tel_de(it) in tel_trafego:
+            return "Tráfego pago"
+        return origem((oport.get(it.get("oportunidade")) or {}).get("nome"))
 
     hoje, hora = agora.astimezone(BRT).date(), agora.astimezone(BRT).strftime("%H:%M")
     realizadas = [i for i in marcadas if i.get("status") == "C"]
@@ -123,14 +143,15 @@ def dados(zaia, ej, ini, fim, agora):
     por_origem = {o: {"triados": 0, "agendadas": 0, "marcadas": 0, "realizadas": 0, "canceladas": 0, "fechados": 0}
                   for o in ORIGENS}
     for o in criadas:
-        por_origem[origem(o.get("nome"))]["triados"] += 1
+        por_origem[org_op(o)]["triados"] += 1
     for o in fechadas:
-        por_origem[origem(o.get("nome"))]["fechados"] += 1
+        por_origem[org_op(o)]["fechados"] += 1
+        o["_origem"] = org_op(o)
     for chave, lista in (("agendadas", agendadas), ("marcadas", marcadas), ("realizadas", realizadas),
                          ("canceladas", canceladas)):
         for i in lista:
             por_origem[org(i)][chave] += 1
-    return {"novos": int(contatos.get("novos") or 0), "reengajados": int(contatos.get("reengajados") or 0),
+    return {"novos": int(contatos.get("novos") or 0), "novos_trafego": novos_trafego, "reengajados": int(contatos.get("reengajados") or 0),
             "triados": criadas, "agendadas": agendadas, "marcadas": marcadas, "realizadas": realizadas,
             "canceladas": canceladas, "sem_baixa": sem_baixa, "vao_acontecer": vao_acontecer,
             "fechados": fechadas, "recusados": recusadas, "por_origem": por_origem}
@@ -150,7 +171,7 @@ def _fechado(o):
     cli = ((o.get("cliente_info") or {}).get("nome") or "").split()
     adv = ((o.get("responsavel_info") or {}).get("nome") or "").split()
     nome = " ".join(cli[:2]).title() if cli else "sem nome"
-    return f"{nome} ({ROTULO[origem(o.get('nome'))]}{', ' + adv[0].title() if adv else ''})"
+    return f"{nome} ({ROTULO[o.get('_origem') or origem(o.get('nome'))]}{', ' + adv[0].title() if adv else ''})"
 
 
 def _por_origem(po, chave):
@@ -161,7 +182,7 @@ def _por_origem(po, chave):
 def texto(d, ini, fim):
     n_marc, n_real = len(d["marcadas"]), len(d["realizadas"])
     linhas = [cabecalho(ini, fim), "",
-              f"👥 *Leads novos no WhatsApp* {d['novos']}",
+              f"👥 *Leads novos no WhatsApp* {d['novos']} (tráfego pago {d['novos_trafego']})",
               f"(mais {d['reengajados']} contatos antigos que voltaram a falar)", "",
               f"📝 *Casos triados* {len(d['triados'])}" + _por_origem(d["por_origem"], "triados"),
               f"📅 *Reuniões agendadas na semana* {len(d['agendadas'])}", "",
@@ -186,10 +207,12 @@ def texto(d, ini, fim):
                f"Reunião realizada para contrato {_pct(len(d['fechados']), n_real)}"]
     t = d["por_origem"]["Tráfego pago"]
     linhas += ["", "🎯 *Só tráfego pago*",
-               f"Triados {t['triados']}, reuniões agendadas {t['agendadas']}, marcadas para a semana {t['marcadas']}, "
+               f"Leads {d['novos_trafego']}, triados {t['triados']}, reuniões agendadas {t['agendadas']}, marcadas para a semana {t['marcadas']}, "
                f"realizadas {t['realizadas']}, canceladas {t['canceladas']}, contratos {t['fechados']}",
-               "", "ℹ️ A origem vem do nome da oportunidade no EasyJur (\"Tráfego pago\", \"Indicação\"). "
-               "Oportunidade sem esse nome entra como sem origem marcada. Reunião sem baixa no EasyJur não dá para saber se "
+               f"Lead do anúncio para reunião agendada {_pct(t['agendadas'], d['novos_trafego'])}",
+               "", "ℹ️ Tráfego pago = contato com a etiqueta Tráfego Pago na Za.Ia (posta sozinha quando o lead chega "
+               "com a mensagem pronta do anúncio ou diz que viu o anúncio) ou oportunidade com \"Tráfego pago\" no "
+               "nome. Sem nenhum dos dois entra como sem origem marcada. Reunião sem baixa no EasyJur não dá para saber se "
                "aconteceu, por isso vale concluir ou cancelar no sistema."]
     return "\n".join(linhas)
 
