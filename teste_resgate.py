@@ -138,6 +138,10 @@ for msgs_dia in ([],
 # reunião anterior à entrada no ar: não chama
 z, _ = rodar(antes, datetime(2026, 10, 23, 18, 0, tzinfo=d.BRT), [item(data="2026-10-22")])
 assert not [f for f, a in z.env if f == "agendar_mensagem"]
+# "Eu ja consegui, obrigada!" (Ezequias, 04/11) para o resgate; "já consegui o laudo" não
+import resgate as _r
+assert _r.RE_DESISTE.search("eu ja consegui,obrigada!") and _r.RE_DESISTE.search("ja paguei a divida")
+assert not _r.RE_DESISTE.search("ja consegui o laudo, podemos remarcar?")
 print("OK — não chama quando a reunião aconteceu, foi remarcada, a equipe assumiu ou o cliente desistiu")
 
 # cadência: R2, R3 e R4 em 3, 5 e 10 dias úteis depois da reunião (segunda 26/10 → qui 29/10, seg 02/11, seg 09/11)

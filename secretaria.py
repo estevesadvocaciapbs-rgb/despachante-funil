@@ -736,7 +736,7 @@ def ordens_lucas(texto):
     for linha in texto.splitlines():
         n = norm(linha)
         m_ok = re.match(r"^ok\s+(todas|todos|[\d\s,e]+)\.?$", n)
-        m_nao = re.match(r"^nao\s+(\d{1,2})\.?$", n)
+        m_nao = re.match(r"^nao\s+(todas|todos|[\d\s,e]+)\.?$", n)
         m_ed = re.match(r"^\s*editar\s+(\d{1,2})\s*[:\-]\s*(.*)$", linha, re.I)
         if m_ok or m_nao or m_ed:
             if edit:
@@ -749,7 +749,11 @@ def ordens_lucas(texto):
             else:
                 ordens += [("OK", x, None) for x in re.findall(r"\d{1,2}", alvo)]
         elif m_nao:
-            ordens.append(("NAO", m_nao.group(1), None))
+            alvo = m_nao.group(1)
+            if alvo.startswith("tod"):
+                ordens.append(("NAO", "TODAS", None))
+            else:
+                ordens += [("NAO", x, None) for x in re.findall(r"\d{1,2}", alvo)]
         elif m_ed:
             edit = ("EDITAR", m_ed.group(1), m_ed.group(2))
         elif edit:
@@ -785,6 +789,8 @@ def aprovacoes_lucas(zaia, msgs, agora, contagem, enviar=True):
             continue  # "OK 2" sem relatório recente não é para cá
         _feitos.add(m["id"])
         linhas = []
+        if any(a == "NAO" and n == "TODAS" for a, n, _ in ordens):
+            ordens = [o for o in ordens if o[1] != "TODAS"] + [("NAO", k, None) for k in itens]
         if any(a == "OK" and n == "TODAS" for a, n, _ in ordens):
             ordens = [o for o in ordens if o[1] != "TODAS"] + [("OK", k, None) for k, v in itens.items()
                                                                 if not v["alerta"]]
@@ -794,7 +800,18 @@ def aprovacoes_lucas(zaia, msgs, agora, contagem, enviar=True):
                 linhas.append(f"❓ Não achei o item {num} no relatório de pendências.")
                 continue
             if acao == "NAO":
-                linhas.append(f"⏭️ Item {num} não enviado")
+                # NÃO = o Dr. Lucas encerrou o assunto com esse cliente: sai a etiqueta PENDÊNCIA LUCAS e o
+                # cliente não volta no relatório das 17h30 até escrever de novo (pedido da usuária, 13/11)
+                tirou = True
+                if enviar:
+                    try:
+                        tirar_etiqueta(zaia, it["tel"], DR_LUCAS["etiqueta"])
+                    except Exception as erro:
+                        tirou = False
+                        _log(f"etiqueta não retirada: {type(erro).__name__}")
+                linhas.append(f"⏭️ Item {num} ({it['nome']}) não enviado" +
+                              (" e tirei a etiqueta PENDÊNCIA LUCAS. Ele só volta ao relatório se escrever de novo"
+                               if tirou else f". A etiqueta PENDÊNCIA LUCAS não saiu, mande NÃO {num} de novo"))
                 continue
             texto = texto if acao == "EDITAR" else (None if it["alerta"] else it["texto"])
             if not texto:

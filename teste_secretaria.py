@@ -228,7 +228,13 @@ z = rodar_lucas("OK 1 2\nNão 3")
 assert z.enviadas[0] == ("5594900000001", "*Dr. Lucas*:\nOlá, Maria! Recebi seus documentos.")
 conf = z.enviadas[-1]
 assert conf[0] == s.DR_LUCAS["tel"] and "✅ Enviado para MARIA TESTE (item 1)" in conf[1]
-assert "❓ Item 2" in conf[1] and "⏭️ Item 3" in conf[1] and len(z.enviadas) == 2 and z.removidas == ["e13"]
+assert "❓ Item 2" in conf[1] and "⏭️ Item 3" in conf[1] and len(z.enviadas) == 2 and z.removidas == ["e13", "e13"]
+assert "⏭️ Item 3 (ANA TESTE) não enviado e tirei a etiqueta PENDÊNCIA LUCAS" in conf[1]
+# NÃO TODAS e NÃO 1 2: nada vai ao cliente e a etiqueta sai de cada um (13/11, caso José Wilson)
+z = rodar_lucas("Não todas")
+assert len(z.enviadas) == 1 and z.removidas == ["e13"] * 3 and z.enviadas[0][1].count("⏭️") == 3
+z = rodar_lucas("não 1 e 3")
+assert len(z.enviadas) == 1 and z.removidas == ["e13"] * 2 and "Item 2" not in z.enviadas[0][1]
 z = rodar_lucas("EDITAR 2: Olá, José! O processo está concluso para sentença.\nAssim que sair, aviso.")
 assert z.enviadas[0] == ("5594900000002", "*Dr. Lucas*:\nOlá, José! O processo está concluso para sentença.\nAssim que sair, aviso.")
 z = rodar_lucas("ok todas")

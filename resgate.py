@@ -58,7 +58,10 @@ RE_NAO_PODE = re.compile(
 RE_DESISTE = re.compile(
     r"nao (tenho|tem|quero) mais|nao quero (mais|seguir|continuar)|desist|ja resolvi|ja contratei|"
     r"outro advogado|outra advogada|nao preciso mais|nao me (chame|mande|procure)|"
-    r"para de (mandar|me chamar)|pare de (mandar|me chamar)|sem interesse")
+    r"para de (mandar|me chamar)|pare de (mandar|me chamar)|sem interesse|"
+    # "Eu ja consegui, obrigada!" (Ezequias, 04/11): resolveu sozinho, não remarca mais (13/11)
+    r"ja consegui\s*(resolver|negociar|limpar|tirar|quitar|pagar)?\s*([,.!]|obrigad|$)|consegui resolver|"
+    r"ja (esta|ta|foi|estao|foram) resolvid|ja (negociei|quitei|paguei|limpei)|ja deu certo|nao precisa mais")
 _estado = {"ultima": None, "ativos": {}, "avisados": set()}
 
 
