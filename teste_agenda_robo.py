@@ -27,6 +27,9 @@ for ruim in ("AGENDA · advogado 378457 · data 14/11/2026 · hora 14:00 · desc
         raise AssertionError(ruim)
     except a.FichaInvalida:
         pass
+ex = a.ler_ficha(12, "AGENDA · tipo ATENDIMENTO · advogado 378457 · data 14/11/2026 · hora 14:00 · fim 14:30 · cliente Maria da Silva Souza · processo - · publicacao - · local Escritório · desc Atendimento trabalhista (pedido da Dra. Fernanda)")
+assert "processo" not in ex and ex["local"] == "Escritório"  # o exemplo da rotina
+assert "local" not in a.ler_ficha(1, "AGENDA · tipo TAREFA · advogado 378457 · data 14/11/2026 · hora 08:30 · local - · desc Ativar push")
 print("OK — linhas AGENDA, REMARCAR e DESMARCAR")
 
 # só vale linha 🤖 em mensagem do sistema com o ✅ do mesmo S, e some depois do 🧾

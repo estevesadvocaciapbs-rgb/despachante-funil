@@ -102,10 +102,9 @@ def ler_ficha(n, resto):
         elif chave == "de":
             d, _, h = valor.partition(" ")
             f["de_data"], f["de_hora"] = _data(d), _hora(h) if h else None
-        elif chave == "local":
-            f["local"] = valor
-        elif chave == "desc":
-            f["desc"] = valor
+        elif chave in ("local", "desc"):
+            if valor not in ("-", "—", ""):
+                f[chave] = valor
         else:
             raise FichaInvalida(f"campo desconhecido: {p!r}")
     if "advogado" in f and f["advogado"] not in ADVOGADOS:
