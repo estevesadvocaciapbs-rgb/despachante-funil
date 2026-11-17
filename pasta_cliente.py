@@ -34,7 +34,9 @@ RE_PEDIDO_DOCS = re.compile(r"documento.{0,120}(envi|mand|encaminh|precis|lista|
                             r"(envi|mand|encaminh|precis|lista|providenc).{0,120}documento")
 RE_RESPOSTA = re.compile(r"^\s*\*?(nao\s+)?pasta\s+d(\d{1,3})\b\s*(.*?)\s*\*?\s*$")
 RE_CODIGO_AVISO = re.compile(r"📂 \*D(\d{1,3})\*")
-RE_MARCA = re.compile(r"^(✅|👍|⚠️|❓) \*D(\d{1,3})\*")
+# A Za.Ia põe "*Annie*:" + quebra de linha antes do texto enviado com assinatura "ia"; sem o re.M a marca não era
+# reconhecida e cada reinício do plantão (~6 h) refazia o D já guardado, mandando ⚠️ de novo (Dra. Danielle, 17/11).
+RE_MARCA = re.compile(r"^(✅|👍|⚠️|❓) \*D(\d{1,3})\*", re.M)
 RE_CABECALHO = re.compile(r"DOCUMENTO DE CLIENTE — (.+?) \((\d{10,13})\)\*")
 RE_PRIMEIRO = re.compile(r"pelo WhatsApp em (\d{2})/(\d{2}) (\d{2}):(\d{2})")
 RE_ULTIMO = re.compile(r"\(último às (\d{2})/(\d{2}) (\d{2}):(\d{2})\)")
@@ -137,7 +139,7 @@ def avisos_pendentes(msgs_adv, agora, d):
         n = cod.group(1)
         depois = msgs_adv[i + 1:]
         marcas = [x for x in depois if x.get("sender") != "CONTACT"
-                  and (RE_MARCA.match(x.get("content") or "") or [None, None, None])[2] == n]
+                  and (RE_MARCA.search(x.get("content") or "") or [None, None, None])[2] == n]
         respostas = []
         for x in depois:
             r = RE_RESPOSTA.match(d.sem_acento(x.get("content") or "").lower()) if x.get("sender") == "CONTACT" else None
@@ -187,7 +189,7 @@ def executar(av, resto, adv, d):
 def decidir(av, agora):
     """(acao, resto, chave): acao 'guardar', 'nao', 'ja_guardado' ou None."""
     marca = av["ultima_marca"]
-    guardado = bool(marca) and (marca.get("content") or "").startswith("✅")
+    guardado = bool(marca) and RE_MARCA.search(marca.get("content") or "").group(1) == "✅"
     novas = [r for r in av["respostas"] if not marca or r[0]["createdAt"] > marca["createdAt"]]
     if novas:
         msg, nao, resto = novas[-1]

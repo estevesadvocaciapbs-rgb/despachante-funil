@@ -146,6 +146,20 @@ z = Z([aviso(4, AGORA - timedelta(hours=3), "📂 *D4* — vou guardar em X às 
 zera()
 pc.rodada(z, AGORA, {}, d)
 assert z.enviados() and z.enviados()[0].startswith("👍 *D4*: os arquivos já estavam guardados"), z.enviados()
+# caso Dra. Danielle (17/11): a Za.Ia grava "*Annie*:" + quebra + "✅ *D9* ..." e o plantão reiniciado refazia o D9 a cada 6 h
+for marca in ("*Annie*:\n✅ *D9* guardado: 10 arquivo(s) em X.", "*Annie*:\n⚠️ *D9*: a pasta é X, mas os arquivos não"):
+    z = Z([aviso(9, AGORA - timedelta(days=2), "📂 *D9* — vou guardar em X às 00:30."),
+           {"id": "m9", "sender": "AI", "createdAt": iso(AGORA - timedelta(days=2) + timedelta(hours=1)), "content": marca}])
+    zera()
+    ponte.chamadas.clear()
+    pc.rodada(z, AGORA, {}, d)
+    assert not ponte.chamadas and not z.enviados(), (marca, z.enviados())
+z = Z([aviso(9, AGORA - timedelta(days=2), "📂 *D9* — vou guardar em X às 00:30."),
+       {"id": "m9", "sender": "AI", "createdAt": iso(AGORA - timedelta(days=1)), "content": "*Annie*:\n✅ *D9* guardado: 3"},
+       resposta("NÃO PASTA D9", AGORA - timedelta(minutes=3))])
+zera()
+pc.rodada(z, AGORA, {}, d)
+assert z.enviados() and z.enviados()[0].startswith("👍 *D9*: os arquivos já estavam guardados"), z.enviados()
 print("OK — NÃO PASTA impede, PASTA guarda na hora, NÃO depois de guardado só informa")
 
 # 5) sem pasta e sem pedido: espera o advogado; pasta nova só no caso pós-reunião; várias pastas: escolha
