@@ -1042,3 +1042,21 @@ _ml = d.avaliar_trabalhista("Trabalha há 3 anos, é humilhada pelo chefe, FGTS 
                             "pagamento. Tem holerite.", _ag)
 assert _ml["agenda"] and _ml["excecao"] is None, _ml
 print("OK — só assédio sexual agenda sozinho; assédio moral com menos de 3 meses é descartado")
+
+
+# 17/11 — nome do WhatsApp só com emoji (caso Valdemir) e "Ponto a verificar com a Dra. Danielle" no aviso
+assert d.primeiro_nome("🏃🏾‍♂️") == ""
+assert d.primeiro_nome("Iraido Santos😍") == "Iraido"
+assert d.primeiro_nome("josé mariano") == "José"
+assert d.sem_nome_vazio("*Annie*:\nOi, ! Ainda está por aí?") == "*Annie*:\nOi! Ainda está por aí?"
+assert d.sem_nome_vazio("Olá, ! A Dra. Danielle analisou") == "Olá! A Dra. Danielle analisou"
+assert d.sem_nome_vazio(", me desculpe! O horário") == "Me desculpe! O horário"
+assert d.sem_nome_vazio("Olá, Ana! Tudo certo") == "Olá, Ana! Tudo certo"
+assert "Ponto a verificar: avaliar" in d.resumo_do_caso("Ele quer saber. Ponto a verificar com Dra. Danielle Esteves: avaliar a negativa")
+assert "Ponto a verificar: x" in d.resumo_do_caso("Ponto a verificar com o Dr. Lucas: x")
+# caso Iraíldo: "só depois eu vou ver" é SEM HORÁRIO (avisa o advogado), não pedido de outro horário (reoferta)
+_ira = ("Posso nem dar resposta agora, entendeu? Eu não posso nem falar qual horário melhor. Só depois é que eu vou ver, "
+        "que aí eu falo com vocês. Tá bom? Obrigado, boa tarde aí. Até amanhã ou pra semana, não sei, vamos ver aí.")
+assert d.tipo_de_recusa([_ira], {("18", "11", "10", "30"), ("18", "11", "14", "00")}) == "sem_horario"
+assert d.tipo_de_recusa(["não consigo nesses horários, teria quinta à tarde?"], {("18", "11", "10", "30")}) == "outro"
+print("teste 17/11 ok")

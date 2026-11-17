@@ -283,7 +283,7 @@ class MCP:
         args = {k: v for k, v in args.items() if v is not None}
         for k in ("mensagem", "texto"):
             if ferramenta.startswith(("agendar_mensagem", "enviar_mensagem")) and isinstance(args.get(k), str):
-                args[k] = dia_da_semana_certo(args[k])
+                args[k] = sem_nome_vazio(dia_da_semana_certo(args[k]))
         resp = self._post({"jsonrpc": "2.0", "id": self._id(), "method": "tools/call",
                            "params": {"name": ferramenta, "arguments": args}})
         if not resp or "error" in resp:
@@ -330,6 +330,10 @@ def resumo_do_caso(texto):
             continue
         linhas.append(s)
     texto = " ".join(linhas)
+    # o briefing é escrito para o advogado da área; a reunião pode ficar com outro (regra de 03/11), então o nome
+    # do advogado sai de "Ponto a verificar com a Dra. Danielle Esteves:" (caso Valdemir, 17/11)
+    texto = re.sub(r"\s+com\s+(?:a\s+|o\s+)?Dr\.?a?\.?\s+(?:Danielle|Fernanda|Lucas)(?:\s+[A-ZÀ-Ú][a-zà-ú]+){0,2}(?=\s*:)",
+                   "", texto)
     return (texto[:700] + "…") if len(texto) > 700 else texto
 
 
@@ -975,8 +979,19 @@ def id_de(resposta):
 
 
 def primeiro_nome(nome):
-    p = re.split(r"\s+", nome.strip())[0] if nome.strip() else ""
-    return p[:1].upper() + p[1:].lower() if p else ""
+    """Primeira palavra com letras do nome; "" quando o nome do WhatsApp é só emoji (caso Valdemir, 17/11)."""
+    for p in re.split(r"\s+", (nome or "").strip()):
+        p = re.sub(r"[^\w'-]", "", p).strip("_'-")
+        if re.search(r"[^\W\d_]", p):
+            return p[:1].upper() + p[1:].lower()
+    return ""
+
+
+def sem_nome_vazio(txt):
+    """Arruma a saudação quando o nome veio vazio: "Olá, !" -> "Olá!", ", me desculpe" no começo -> "Me desculpe"."""
+    txt = re.sub(r"\b(Olá|Oi|Bom dia|Boa tarde|Boa noite|Sem problema|Perfeito|Pronto),\s*([!.,?])", r"\1\2", txt)
+    txt = re.sub(r"^(\*[^*\n]{1,40}\*:?\s*\n)?,\s*(\w)", lambda m: (m.group(1) or "") + m.group(2).upper(), txt)
+    return txt
 
 
 class Conversas:
@@ -1639,7 +1654,8 @@ RE_EXCECAO = re.compile(r"\b(noite|noitinha|sabado|domingo|fim de semana|final d
                         r"horario comercial|(depois|apos) (das|as) (1[89]|2\d)|antes (das|as) [5-7])\b")
 RE_SEM_HORARIO = re.compile(r"\bsem (horario|tempo)\b|nao tenho (horario|tempo)|agenda (cheia|lotada|apertada)|viaj|"
                             r"fora da cidade|nao sei quando|depois (eu )?(vejo|marco|te falo|te aviso|aviso)|"
-                            r"mais (pra|para) frente|outro momento|(essa|esta) semana (nao|ta|esta|fica) "
+                            r"mais (pra|para) frente|outro momento|depois (e que )?(eu )?vou (ver|olhar|confirmar)|vamos ver|ainda nao sei|"
+                            r"(posso|consigo) nem (dar|falar|responder)|nao (posso|consigo) (dar|te dar) (a )?resposta|(essa|esta) semana (nao|ta|esta|fica) "
                             r"(da|complicad|corrid|dificil)|nao (vou )?(consigo|posso) (essa|esta) semana")
 LIMITE_PEDIDO = 400  # mensagem maior que isso é relato do caso, não resposta à oferta
 DIAS_NOME = {"segunda": 0, "terca": 1, "quarta": 2, "quinta": 3, "sexta": 4}
