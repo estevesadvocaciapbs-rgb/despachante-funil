@@ -210,6 +210,72 @@ def avisar_posreuniao(motivo, agora=None):
     return False
 
 
+# ---------------------------------------------------------------- autocorreção (pedido da usuária, 17/11/2026)
+# O auditor manda "🛠️ *ERROS DA AUTOMAÇÃO" ao privado do Dr. Lucas. Em vez de a usuária repassar os erros, o
+# porteiro grava a hora do relatório em autocorrecao.json (ramo "sinal") e a rotina "Autocorreção da automação"
+# só trabalha quando esse arquivo muda. Ela responde com "🔧 *AUTOCORREÇÃO"; as linhas de "📌 Regras novas para o
+# auditor" vão para regras-auditor.md (o auditor lê esse arquivo). O repositório é público: só regra genérica,
+# sem nome, telefone ou caso de cliente.
+ARQUIVO_AUTOCORRECAO, ARQUIVO_REGRAS = "autocorrecao.json", "regras-auditor.md"
+MARCA_ERROS, MARCA_AUTOCORRECAO, MARCA_REGRAS = "ERROS DA AUTOMAÇÃO", "AUTOCORREÇÃO", "📌"
+RAW_REGRAS = "https://raw.githubusercontent.com/{repo}/sinal/" + ARQUIVO_REGRAS
+
+
+def avisar_autocorrecao(agora=None):
+    agora = (agora or datetime.now(timezone.utc)).replace(microsecond=0)
+    conteudo = json.dumps({"ultimo_erro": agora.isoformat().replace("+00:00", "Z")}) + "\n"
+    return gravar_no_ramo(ARQUIVO_AUTOCORRECAO, conteudo, "sinal: relatório de erros novo")
+
+
+def regras_da_mensagem(texto):
+    """Linhas de regra depois de "📌 Regras novas para o auditor", limpas de qualquer dado de cliente."""
+    linhas, dentro = [], False
+    for l in (texto or "").splitlines():
+        if MARCA_REGRAS in l:
+            dentro = True
+            continue
+        if not dentro:
+            continue
+        if not l.strip() or re.match(r"^\s*(🔧|✅|🚫|🧑|⚠️|❌|👉)", l):
+            break
+        l = re.sub(r"\((caso|ex\.?:)[^)]*\)", "", l)          # "(caso Fulano)" sai
+        if re.search(r"\d{8,}", l):                             # telefone: a linha inteira sai
+            continue
+        l = re.sub(r"^\s*[-•*]\s*", "", l).strip()
+        if len(l) >= 15:
+            linhas.append("- " + l)
+    return linhas
+
+
+def guardar_regras(linhas, agora=None):
+    """Acrescenta as regras novas em regras-auditor.md (sem repetir)."""
+    if not linhas:
+        return False
+    import base64
+    try:
+        atual = base64.b64decode(_github("GET", f"contents/{ARQUIVO_REGRAS}?ref={RAMO_SINAL}")["content"]).decode()
+    except Exception:
+        atual = ("# Regras do auditor aprendidas pela autocorreção\n"
+                 "Valem como parte do prompt do auditor. Só regras genéricas, sem dado de cliente.\n")
+    novas = [l for l in linhas if l not in atual]
+    if not novas:
+        return False
+    dia = (agora or datetime.now(timezone.utc)).astimezone(BRT).strftime("%d/%m/%Y")
+    conteudo = atual.rstrip("\n") + f"\n\n## {dia}\n" + "\n".join(novas) + "\n"
+    return gravar_no_ramo(ARQUIVO_REGRAS, conteudo, "regras do auditor: autocorreção")
+
+
+def olhar_autocorrecao(msgs, agora):
+    """msgs: mensagens novas do privado do Dr. Lucas."""
+    textos = [m.get("content") or "" for m in msgs]
+    if any(MARCA_ERROS in t for t in textos):
+        if avisar_autocorrecao(agora):
+            _log("relatório de erros novo: autocorreção avisada")
+    for t in textos:
+        if MARCA_AUTOCORRECAO in t and MARCA_REGRAS in t and guardar_regras(regras_da_mensagem(t), agora):
+            _log("regras novas do auditor gravadas")
+
+
 RE_DOCUMENTOS_GRUPO = re.compile(r"^\s*\*?documentos\b|documentacao (encerrada|fechada|completa)|documentos completos")
 
 
@@ -486,6 +552,8 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
                     continue
                 msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
             recentes = novos(msgs, _estado["desde"], "p" + tel)
+            if tel == LUCAS_TEL and recentes:
+                olhar_autocorrecao(recentes, agora)
             if any(m.get("sender") == "CONTACT" and pedido_financeiro(m.get("content")) for m in recentes):
                 _estado["fin_pendente"] = True  # pedido de financeiro no privado: acorda a rotina financeira
             achou += sum(1 for m in recentes if pedido_no_privado(m, quem))

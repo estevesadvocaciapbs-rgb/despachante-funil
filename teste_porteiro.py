@@ -294,3 +294,21 @@ assert not z.env, "nada de mandar o advogado para o grupo"
 assert not p.pedido_financeiro("V3 alvará 16.406,14 [processo 0815180]")
 assert not p.pedido_financeiro("cria uma tarefa pra mim: conferir a receita do Wilson")
 print("OK — pedido de financeiro no privado acorda só a rotina financeira")
+
+
+# 17/11 — autocorreção: relatório de erros acorda a rotina; regras do auditor sem dado de cliente
+import porteiro as _pt
+_msg = ("*Annie*:\n🔧 *AUTOCORREÇÃO — 17/11 17:40*\n✅ 1 corrigido\n\n📌 Regras novas para o auditor\n"
+        "- Lead trabalhista com o Dr. Lucas não é erro quando a Dra. Danielle não tinha horário no turno (caso Valdemir)\n"
+        "- Ligar para 5594999998888 antes\n- curta\n\n🧑‍💻 Fica para o código: nada")
+assert _pt.regras_da_mensagem(_msg) == ["- Lead trabalhista com o Dr. Lucas não é erro quando a Dra. Danielle não tinha "
+                                        "horário no turno"], _pt.regras_da_mensagem(_msg)
+_chamadas = []
+_pt.avisar_autocorrecao = lambda agora=None: _chamadas.append("erro") or True
+_pt.guardar_regras = lambda linhas, agora=None: _chamadas.append(tuple(linhas)) or True
+_pt.olhar_autocorrecao([{"content": "🛠️ *ERROS DA AUTOMAÇÃO — 17/11 17:00*\n4 erro(s)"}, {"content": _msg}], None)
+assert _chamadas[0] == "erro" and len(_chamadas) == 2, _chamadas
+_chamadas.clear()
+_pt.olhar_autocorrecao([{"content": "Bom dia, Dr. Lucas"}], None)
+assert not _chamadas
+print("autocorreção ok")
