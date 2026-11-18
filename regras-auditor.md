@@ -1,0 +1,7 @@
+# Regras do auditor aprendidas pela autocorreção
+Valem como parte do prompt do auditor. Só regras genéricas, sem dado de cliente.
+
+## 18/11/2026
+- Mensagem assinada "*Annie:*" (dois-pontos dentro do negrito) sem execução da IA no mesmo minuto no ler_atendimento_ia é da equipe pelo celular: não é erro da Annie.
+- Resposta da Annie que está só no respostaFinal e não aparece no ler_conversa não foi enviada: não reportar.
+- Valor que a Annie repete igual à transcrição do áudio do cliente não é erro dela; se a transcrição parecer errada, reporte como dúvida de transcrição.
