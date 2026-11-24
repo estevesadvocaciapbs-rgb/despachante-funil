@@ -131,7 +131,8 @@ def rodada(zaia, easyjur_fn, conversas, agora, contagem, d, pendentes=()):
                         f"Olá, {d.primeiro_nome(nome)}! Este é o link do seu atendimento com {quem}, "
                         f"{d.texto_slot(inicio)}, por videochamada: {link} — é só clicar nele na hora marcada. "
                         "Eu te mando lembrete antes. Até lá!"))
-        tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
+        import vigia_reuniao
+        tem_pendente = vigia_reuniao.trocar_lembretes(zaia, list(pendentes), contato_id, inicio, d)
         agendados = [] if tem_pendente else d.lembretes(zaia, contato_id, conv_id, nome, adv, inicio, local, link)
         try:
             zaia.chamar("enviar_mensagem", assinatura="ia", numero=adv["tel"], texto=(

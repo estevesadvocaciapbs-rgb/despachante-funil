@@ -154,6 +154,19 @@ def reunioes_por_cliente(d, ej, agora):
         pag += 1
 
 
+def advogado_combinado(d, msgs, inicio):
+    """Advogado que o cliente ouviu na confirmação/lembrete desta reunião. O EasyJur pode ter outro como 1º
+    responsável (reunião da Dra. Danielle passada para o Dr. Lucas, com ela como 2ª): o resgate dizia "conversa com
+    o Dr. Lucas" a quem tinha marcado com a Dra. Danielle (Leni, 23/11)."""
+    hora = f"{inicio:%H}h{inicio:%M}"
+    for m in reversed(msgs):
+        txt = m.get("content") or ""
+        if m.get("sender") != "CONTACT" and hora in txt and any(n in txt for n in ("Danielle", "Fernanda", "Lucas"))                 and (RE_LEMBRETE.search(d.sem_acento(txt)) or "confirmad" in d.sem_acento(txt)
+                     or d.MARCA_CONFIRMACAO in txt):
+            return d.advogado_do_texto(txt)
+    return None
+
+
 def caso_do_dia(d, inicio, msgs):
     """("faltou" | "avisou", hora do aviso ou None) ou (None, motivo) para o dia da reunião."""
     dia = inicio.replace(hour=0, minute=0)
@@ -241,6 +254,7 @@ def rodada(zaia, easyjur_fn, agenda_fn, conversas, agora, contagem, d, pendentes
         if not conv:
             continue
         nome = (conv.get("contact") or {}).get("name") or item.get("nome_cliente") or ""
+        adv = advogado_combinado(d, msgs, inicio) or adv
         n, quando, motivo = proximo_passo(d, item, msgs, agora)
         resumo = resumo_do_atendimento(item.get("descricao"))
         lead = {"nome": nome, "tel": tel, "texto": resumo, "quando": inicio, "origem": "resgate"}

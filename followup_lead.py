@@ -24,7 +24,9 @@ ESPERA_F1 = timedelta(hours=1)
 ESPERA_F2 = timedelta(hours=20)
 ESPERA_F3 = timedelta(days=3)
 F1_ATE = timedelta(days=3)                # pergunta mais velha que isso sem follow-up: não começa agora
-HORAS = range(0, 24)  # 24 h (usuária, 27/10)
+HORAS = range(0, 24)  # 24 h (usuária, 27/10) — vale para o F1, que segue uma conversa daquela hora
+HORAS_F2_F3 = range(8, 21)  # F2 e F3 não seguem conversa nenhuma: só das 8h às 20h59 (24/11, 5 envios de madrugada)
+LIMITE_SEMANA = 3  # no máximo 3 "ainda está por aí" por lead em 7 dias, mesmo que ele responda "oi" e suma de novo
 MARCAS = ("Ainda está por aí?", "Passando para saber se você ainda precisa de ajuda",
           "Esta é a minha última mensagem por aqui")
 _estado = {"ultima": None}
@@ -68,6 +70,10 @@ def proximo(msgs, agora, d):
     i_lead = max((i for i, m in enumerate(msgs) if m.get("sender") == "CONTACT"), default=-1)
     depois = msgs[i_lead + 1:]
     feitos = [m for m in depois if any(k in (m.get("content") or "") for k in MARCAS)]
+    semana = [m for m in msgs if any(k in (m.get("content") or "") for k in MARCAS)
+              and agora - d.ler_iso(m["createdAt"]) <= timedelta(days=7)]
+    if len(semana) >= LIMITE_SEMANA:
+        return None, "limite semanal de follow-ups"
     perguntas = [m for m in depois if e_annie(m) and "?" in (m.get("content") or "")
                  and not any(k in (m.get("content") or "") for k in MARCAS)]
     if not perguntas:
@@ -108,7 +114,7 @@ def rodada(zaia, agora, contagem, d, pendentes=()):
         msgs = sorted((zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", []),
                       key=lambda m: m["createdAt"])
         n, quando = proximo(msgs, agora, d)
-        if n is None or quando > agora:
+        if n is None or quando > agora or (n >= 2 and local.hour not in HORAS_F2_F3):
             continue
         nome = (at.get("contact") or {}).get("name") or at.get("name") or ""
         contagem["followups_lead"] = contagem.get("followups_lead", 0) + 1

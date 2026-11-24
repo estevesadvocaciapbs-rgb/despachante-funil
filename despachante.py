@@ -726,7 +726,13 @@ def e_confirmacao(texto, ofertados):
     t = sem_acento(texto)
     if any(f in t for f in FRASES_DE_PERGUNTA):
         return False
+    if RE_NAO_CONFIRMA.search(t):
+        return False  # "cancelei seu horário de 25/11, às 14h00" repete o horário, mas não confirma (Angela, 19/11)
     return True
+
+
+RE_NAO_CONFIRMA = re.compile(r"cancel|desmarc|remarc|ocupad|nao (vai|podera|sera) (mais )?possivel|"
+                             r"nao (esta|estara) (mais )?disponivel")
 
 
 RE_PEDE_OUTRO = re.compile(
@@ -1118,6 +1124,11 @@ def ofertar(zaia, conversas, agenda_fn, leads, agora, contagem, grupo):
             contagem["pulados"] += 1
             log("lead pulado (alguém da equipe já está atendendo)")
             continue
+        import hesitacao
+        if hesitacao.recusou(msgs, sys.modules[__name__]):
+            contagem["pulados"] += 1
+            log("lead pulado (recusou: Defensoria, outro advogado, desistiu)")
+            continue
         if area == "criminal" and re.search(r"\b(pres[oa]|depoimento|audiencia)\b",
                                            sem_acento(" ".join(m.get("content") or "" for m in msgs))):
             contagem["pulados"] += 1
@@ -1286,7 +1297,12 @@ def gravar_reuniao(zaia, ej, conv, nome, tel, adv, inicio, area, resumo, pendent
         return False
     _gravadas.add(chave)
     contato_id, conv_id = conv["contact"]["id"], conv["id"]
-    tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
+    try:  # remarcação: os lembretes da data antiga saem da fila; só não agenda de novo se já houver para ESTE horário
+        import vigia_reuniao
+        tem_pendente = vigia_reuniao.trocar_lembretes(zaia, pendentes, contato_id, inicio, sys.modules[__name__])
+    except Exception as erro:
+        log(f"troca de lembretes falhou: {type(erro).__name__}")
+        tem_pendente = any(p.get("contactId") == contato_id for p in pendentes)
     agendados = [] if tem_pendente else lembretes(zaia, contato_id, conv_id, nome, adv, inicio, agora, link, modo)
     if presencial:  # confirmação dizendo que é no escritório (a Annie pode ter falado em videochamada)
         zaia.chamar("agendar_mensagem", contatoId=contato_id, conversaId=conv_id,
@@ -1865,6 +1881,24 @@ def outros_horarios(zaia, conversas, conv, lead, msgs, ofertas, agenda_fn, reser
     log(f"lead sem acordo de horário ({tipo}): advogado avisado no privado")
 
 
+def ja_na_agenda(ej, tel, nome, inicio):
+    """Já existe atendimento deste cliente neste dia e hora no EasyJur, de QUALQUER advogado e em QUALQUER status.
+
+    Antes só se olhava a agenda do advogado da oferta e se ignorava o Cancelado: reunião passada para o Dr. Lucas
+    (Danielle como 2ª responsável) foi gravada de novo depois do reinício do plantão, com a confirmação repetida
+    às 23h08 de 21/11 (Eric, Cleibison, Leni); e reunião cancelada (S) voltava a ser gravada (Angela, 19/11)."""
+    itens = (ej.chamar("list_agenda", tipo="ATENDIMENTO", data_interna_inicio=inicio.date().isoformat(),
+                       data_interna_fim=inicio.date().isoformat(), page_size=100) or {}).get("data", [])
+    alvo = sem_acento(nome or "").strip()
+    for i in itens:
+        if (i.get("hora_inicio") or "")[:5] != f"{inicio:%H:%M}":
+            continue
+        tels = RE_TEL.findall(i.get("descricao") or "")
+        if tel in tels or tel[2:] in tels or (alvo and sem_acento(i.get("nome_cliente") or "").strip() == alvo):
+            return True
+    return False
+
+
 def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, contagem, grupo=None):
     for lead in leads:
         conv, msgs = conversas.de(lead["tel"])
@@ -1942,11 +1976,9 @@ def confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads, pendentes, agora, c
 
         ej = easyjur_fn()
         agenda = agenda_fn()
-        existentes = agenda.itens(adv["id"], inicio.date(), inicio.date(), tipo="ATENDIMENTO")
-        if any((i.get("hora_inicio") or "")[:5] == f"{inicio:%H:%M}" and i.get("status") != "S"
-               for i in existentes):
+        if ja_na_agenda(ej, tel, nome, inicio):
             _gravadas.add(chave)
-            continue  # já gravado (pela equipe, pelo auditor ou numa rodada anterior)
+            continue  # já gravado (pela equipe, pelo auditor ou numa rodada anterior), ou cancelado depois
         area, _ = classificar(lead.get("texto", ""))
         resumo = resumo_do_caso(lead.get("texto", "")) or "ver a conversa no WhatsApp."
         # horário especial (OFERECER do advogado) pode ser fora da grade: só não pode bater com outro compromisso
@@ -2247,7 +2279,12 @@ def main():
     zaia = MCP(ZAIA_URL, os.environ.get("ZAIA_TOKEN"), "Za.Ia")
     grupo = zaia.chamar("ler_grupo", grupoId=GRUPO, limit=80)
     tarefas = zaia.chamar("listar_tarefas", limit=100).get("tarefas", [])
-    pendentes = zaia.chamar("listar_agendamentos", status="PENDING", limit=50).get("agendamentos", [])
+    try:  # todas as páginas (antes só as 50 primeiras: o resto parecia "sem mensagem agendada")
+        import vigia_reuniao
+        pendentes = vigia_reuniao.todos_pendentes(zaia)
+    except Exception as erro:
+        log(f"lista completa de agendamentos falhou: {type(erro).__name__}")
+        pendentes = zaia.chamar("listar_agendamentos", status="PENDING", limit=100).get("agendamentos", [])
     leads = leads_recentes(grupo, tarefas, agora)
     leads_conf = leads_recentes(grupo, tarefas, agora, janela_h=24 * JANELA_CONFIRMACAO_D)
     conversas = Conversas(zaia)
@@ -2282,6 +2319,14 @@ def main():
 
     contagem = {"ofertas": 0, "pulados": 0, "sem_horario": 0, "reunioes": 0, "conflitos": 0,
                 "retomadas": 0, "encerradas": 0}
+    try:  # reunião desmarcada, remarcada ou cancelada pelo cliente: cancela lembretes e confirmações pendentes (24/11)
+        import vigia_reuniao
+        vigia_reuniao.rodada(zaia, easyjur_fn, conversas, pendentes, datetime.now(timezone.utc), contagem,
+                             sys.modules[__name__])
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
+    except Exception as erro:
+        log(f"vigia de reunião falhou: {type(erro).__name__}: {erro}")
     try:  # resgate: cliente que não veio à reunião recebe novos horários de tempos em tempos (23/10)
         import resgate
         resgatados = resgate.rodada(
