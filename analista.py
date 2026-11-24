@@ -18,7 +18,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
-MODELO = "claude-opus-5-5"
+MODELO = "claude-haiku-5-5"  # o mais barato (~US$ 0,0025 por lead); trocar aqui se errar demais
 COMECO = datetime(2026, 11, 24, 18, 0, tzinfo=timezone.utc)  # só briefings depois da entrada no ar (sem fila antiga)
 JANELA = timedelta(hours=12)       # briefing mais velho que isso não é analisado
 ESPERA = timedelta(minutes=3)      # deixa a Annie terminar de falar depois do briefing
@@ -101,11 +101,9 @@ def analisar(conversa, briefing, cliente=None):
     if cliente is None:
         import anthropic
         cliente = anthropic.Anthropic(max_retries=3)
-    resp = cliente.beta.messages.create(
+    resp = cliente.messages.create(
         model=MODELO,
         max_tokens=16000,
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": ESQUEMA}},
         system=[{"type": "text", "text": INSTRUCOES + os.environ["CRITERIOS_TRIAGEM"],
                  "cache_control": {"type": "ephemeral"}}],

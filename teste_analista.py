@@ -21,7 +21,7 @@ PARECER = {"decisao": "ACAO_JUDICIAL", "nota": 8, "prova": 3, "solidez": 3, "val
 class Cliente:
     def __init__(self, parecer=PARECER, recusa=False):
         self.pedidos, self.parecer, self.recusa = [], parecer, recusa
-        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self.create))
+        self.messages = SimpleNamespace(create=self.create)
 
     def create(self, **k):
         self.pedidos.append(k)
@@ -73,7 +73,7 @@ z, enviados = rodar([lead()], c)
 assert len(enviados) == 1 and "✅ Cabe ação judicial · nota 8/10" in enviados[0] and f"({TEL})" in enviados[0]
 assert "modo teste" in enviados[0]
 pedido = c.pedidos[0]
-assert pedido["model"] == "claude-opus-5-5" and "CRITÉRIOS FICTÍCIOS" in pedido["system"][0]["text"]
+assert pedido["model"] == "claude-haiku-5-5" and "fallbacks" not in pedido and "CRITÉRIOS FICTÍCIOS" in pedido["system"][0]["text"]
 assert "não depositam meu FGTS" in pedido["messages"][0]["content"]
 assert pedido["output_config"]["format"]["type"] == "json_schema"
 # não repete no mesmo plantão nem depois do reinício (parecer já no grupo)
