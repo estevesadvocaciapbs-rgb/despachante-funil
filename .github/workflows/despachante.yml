@@ -35,9 +35,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Instalar o SDK da Anthropic (analista de viabilidade)
+        run: pip install --quiet "anthropic>=2.13,<3" || echo "sem o SDK da Anthropic: o analista fica desligado"
       - name: Rodar despachante
         env:
           ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CRITERIOS_TRIAGEM: ${{ secrets.CRITERIOS_TRIAGEM }}
           EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
           TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
           GH_TOKEN: ${{ github.token }}

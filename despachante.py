@@ -2343,6 +2343,11 @@ def main():
         confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
     except OrcamentoEasyJur as erro:  # sem EasyJur não dá para ofertar nem gravar; o resto segue
         _avisar_orcamento(zaia, erro)
+    try:  # analista de viabilidade do lead trabalhista, em modo teste: parecer só para a equipe (24/11)
+        import analista
+        analista.rodada(zaia, conversas, leads, grupo, datetime.now(timezone.utc), contagem, sys.modules[__name__])
+    except Exception as erro:
+        log(f"analista falhou: {type(erro).__name__}")
     try:  # "GRAVAR Fulano 19/10 13h" de advogado no grupo: horário combinado fora da oferta
         grupo17 = zaia.chamar("ler_grupo", grupoId="claude-grupo-17", limit=30) or {}
         # privado de cada advogado com o escritório: lido a cada 2 minutos (GRAVAR/OFERECER também valem lá)
