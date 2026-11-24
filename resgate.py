@@ -157,7 +157,7 @@ def reunioes_por_cliente(d, ej, agora):
 def advogado_combinado(d, msgs, inicio):
     """Advogado que o cliente ouviu na confirmação/lembrete desta reunião. O EasyJur pode ter outro como 1º
     responsável (reunião da Dra. Danielle passada para o Dr. Lucas, com ela como 2ª): o resgate dizia "conversa com
-    o Dr. Lucas" a quem tinha marcado com a Dra. Danielle (Leni, 23/11)."""
+    o Dr. Lucas" a quem tinha marcado com a Dra. Danielle (23/11)."""
     hora = f"{inicio:%H}h{inicio:%M}"
     for m in reversed(msgs):
         txt = m.get("content") or ""

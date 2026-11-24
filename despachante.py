@@ -727,7 +727,7 @@ def e_confirmacao(texto, ofertados):
     if any(f in t for f in FRASES_DE_PERGUNTA):
         return False
     if RE_NAO_CONFIRMA.search(t):
-        return False  # "cancelei seu horário de 25/11, às 14h00" repete o horário, mas não confirma (Angela, 19/11)
+        return False  # "cancelei seu horário de 25/11, às 14h00" repete o horário, mas não confirma (19/11)
     return True
 
 
@@ -1886,7 +1886,7 @@ def ja_na_agenda(ej, tel, nome, inicio):
 
     Antes só se olhava a agenda do advogado da oferta e se ignorava o Cancelado: reunião passada para o Dr. Lucas
     (Danielle como 2ª responsável) foi gravada de novo depois do reinício do plantão, com a confirmação repetida
-    às 23h08 de 21/11 (Eric, Cleibison, Leni); e reunião cancelada (S) voltava a ser gravada (Angela, 19/11)."""
+    às 23h08 de 21/11 (3 clientes); e reunião cancelada (S) voltava a ser gravada (19/11)."""
     itens = (ej.chamar("list_agenda", tipo="ATENDIMENTO", data_interna_inicio=inicio.date().isoformat(),
                        data_interna_fim=inicio.date().isoformat(), page_size=100) or {}).get("data", [])
     alvo = sem_acento(nome or "").strip()

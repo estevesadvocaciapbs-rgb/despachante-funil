@@ -3,7 +3,7 @@
 Problema: os lembretes ao cliente (8h do dia e 1 hora antes) e a confirmação com o link são agendados na Za.Ia
 na hora em que a reunião é gravada, e nada os cancelava depois. Quem desmarcava, era desmarcado no EasyJur ou
 remarcava recebia mesmo assim "lembrar do seu atendimento de hoje" e "Podemos confirmar sua presença?"; sem
-resposta, o resgate ainda mandava "Senti sua falta" (casos Angela e Leni, 19 a 23/11).
+resposta, o resgate ainda mandava "Senti sua falta" (19 a 23/11).
 
 A cada 20 minutos (das 6h às 22h), para cada lembrete/confirmação de reunião ainda PENDENTE, confere o
 atendimento no EasyJur e a conversa e CANCELA a mensagem quando:
