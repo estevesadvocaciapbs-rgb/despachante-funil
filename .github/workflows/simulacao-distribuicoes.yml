@@ -1,0 +1,21 @@
+name: "Simulação: processo novo"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  simular:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Simular com os e-mails reais (só contagens)
+        env:
+          EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
+          GOOGLE_AGENDA_CHAVE: ${{ secrets.GOOGLE_AGENDA_CHAVE }}
+          GOOGLE_GMAIL_URL: ${{ secrets.GOOGLE_GMAIL_URL }}
+          PYTHONUNBUFFERED: "1"
+        run: python teste_distribuicoes_real.py
