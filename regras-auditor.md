@@ -8,3 +8,6 @@ Valem como parte do prompt do auditor. Só regras genéricas, sem dado de client
 
 ## 23/11/2026
 - Mensagem "Annie" em conversa sem nenhuma execução no ler_atendimento_ia não saiu do roteiro: reporte como erro de programa, não como regra a corrigir na Annie.
+
+## 25/11/2026
+- Quando alguém da equipe corrige na conversa a data ou hora que a Annie confirmou, e o EasyJur e o card do Vendas têm a data corrigida, não peça para confirmar com o lead. Reporte só a causa (programa ou roteiro) que gerou a data errada.
