@@ -35,6 +35,8 @@ for numero, d in processos.items():
     t = di.tribunal(d)
     if not t:
         c["tribunal não reconhecido"] += 1
+    if di.recurso(d):
+        c["recurso no 2º grau (só aviso)"] += 1
     if not d["autor"]:
         c["sem nome do cliente"] += 1
     if not d["reu"]:

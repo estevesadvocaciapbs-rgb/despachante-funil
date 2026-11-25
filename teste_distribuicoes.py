@@ -149,6 +149,11 @@ outro = TRT.replace("5.08.0114", "6.15.0001")
 ej = EasyJur()
 env = rodar([outro], ej)
 assert len(env) == 1 and "SEM CADASTRO" in env[0] and not any(f.startswith("create") for f, _ in ej.chamadas)
+# recurso no 2º grau (agravo de instrumento, final .0000): não cria, avisa para cadastrar como desdobramento
+agravo = TJPA.replace("8.14.0040", "8.14.0000")
+ej = EasyJur()
+env = rodar([agravo], ej, agora=datetime(2026, 11, 13, 9, 0, tzinfo=BRT))
+assert len(env) == 1 and "desdobramento" in env[0] and not any(f.startswith("create") for f, _ in ej.chamadas)
 # simulação: não cria nada
 D.DRY_RUN = True
 ej = EasyJur()

@@ -51,6 +51,11 @@ def tribunal(d):
     return None
 
 
+def recurso(d):
+    """Agravo, apelação, recurso etc. (ou número de 2º grau, final .0000): no EasyJur é desdobramento, não processo novo."""
+    return d["numero"].endswith(".0000") or bool(re.search(r"agravo|apela|recurso|embargos", normal(d["classe"])))
+
+
 def comarca(ej, orgao, uf):
     """Id da comarca pela cidade no fim do nome da vara ("Vara do Trabalho de Parauapebas",
     "Vara Única de São Félix do Xingu"): busca pela última palavra e aceita o nome que fecha com o fim da vara."""
@@ -222,8 +227,9 @@ def rodada(zaia, easyjur_fn, buscar_emails, agora, contagem, d_mod, grupo_msgs=(
         if d_mod.DRY_RUN:
             _log("[simulação] cadastraria um processo novo")
             continue
-        if not tribunal(d) or not d["autor"]:
-            motivo = "não é TRT, TJ nem TRF" if d["autor"] else "e-mail sem o nome do cliente"
+        if not tribunal(d) or not d["autor"] or recurso(d):
+            motivo = ("é recurso no 2º grau: cadastre como desdobramento do processo de origem" if recurso(d)
+                      else "não é TRT, TJ nem TRF" if d["autor"] else "e-mail sem o nome do cliente")
             zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=d_mod.GRUPO, texto=aviso_manual(d, motivo))
             continue
         try:
