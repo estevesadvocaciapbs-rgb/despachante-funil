@@ -15,9 +15,9 @@ def configurado():
     return bool(os.environ.get("GOOGLE_AGENDA_URL") and os.environ.get("GOOGLE_AGENDA_CHAVE"))
 
 
-def _chamar(corpo, timeout=60):
+def _chamar(corpo, timeout=60, url=None):
     corpo = dict(corpo, chave=os.environ.get("GOOGLE_AGENDA_CHAVE"))
-    req = urllib.request.Request(os.environ["GOOGLE_AGENDA_URL"], data=json.dumps(corpo).encode(),
+    req = urllib.request.Request(url or os.environ["GOOGLE_AGENDA_URL"], data=json.dumps(corpo).encode(),
                                  headers={"Content-Type": "application/json"}, method="POST")
     # O Apps Script responde com um redirecionamento (302) para o resultado; o urllib segue sozinho.
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -60,7 +60,9 @@ def testar():
 
 
 def distribuicoes(dias=5):
-    """E-mails de distribuição do PJe (Push) dos últimos `dias` no Gmail do escritório: [{'id','texto'}] ou None."""
-    if not configurado():
+    """E-mails de distribuição do PJe no Gmail do escritório, pela "Ponte Gmail - distribuicoes" (script separado,
+    segredo GOOGLE_GMAIL_URL; usa a mesma chave da ponte da Agenda). [{'id','texto'}] ou None sem ponte."""
+    url = os.environ.get("GOOGLE_GMAIL_URL")
+    if not (url and os.environ.get("GOOGLE_AGENDA_CHAVE")):
         return None
-    return _chamar({"acao": "distribuicoes", "dias": dias}, timeout=120).get("mensagens", [])
+    return _chamar({"acao": "distribuicoes", "dias": dias}, timeout=120, url=url).get("mensagens", [])

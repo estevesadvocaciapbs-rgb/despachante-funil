@@ -1,7 +1,7 @@
 """Processo novo distribuído → cadastro no EasyJur (pedido da usuária em 25/11/2026).
 
 Quando uma inicial é protocolada, o PJe manda à advogada que distribuiu um e-mail "Push" com o evento
-"Distribuído por sorteio", o número, a vara, as partes e a data de autuação (TRT-8, TRT-1, TJPA...).
+"Distribuído por sorteio", o número, a vara, as partes e a data de autuação (qualquer TRT, TJ ou TRF).
 Esses e-mails são encaminhados ao Gmail do escritório; a ponte Google (Apps Script) os entrega aqui.
 
 A cada 30 minutos:
@@ -21,11 +21,53 @@ JANELA_DIAS = 5          # autuação mais velha que isso não é "processo novo
 MARCA = "📥 *PROCESSO NOVO"
 ADVOGADOS = {"danielle": 344269, "diva": 372515, "fernanda": 378457, "lucas": 344268}
 DANIELLE = 344269
-# CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO → (J, TR): (id do tribunal no EasyJur, área, qualificação do cliente)
-TRIBUNAIS = {("5", "08"): (192, 6, "Reclamante"), ("5", "01"): (243, 6, "Reclamante"),
-             ("8", "14"): (191, 2, "Autor"), ("8", "19"): (242, 2, "Autor")}
-COMARCAS = {"parauapebas": 2507}
-UF = {"08": "PA", "14": "PA", "01": "RJ", "19": "RJ"}
+# CNJ: NNNNNNN-DD.AAAA.J.TR.OOOO. Vale para QUALQUER TRT (J=5), TJ (J=8) e TRF (J=4) (pedido de 25/11:
+# aparecem clientes de outros estados, ex. TRT-19). Ids = tribunais do EasyJur (campo origem).
+TRT = {1: 243, 2: 301, 3: 172, 4: 266, 5: 123, 6: 210, 7: 130, 8: 192, 9: 229, 10: 135, 11: 114, 12: 276,
+       13: 198, 14: 256, 15: 302, 16: 158, 17: 144, 18: 153, 19: 108, 20: 281, 21: 252, 22: 214, 23: 188, 24: 179}
+UF_TRT = {1: "RJ", 2: "SP", 3: "MG", 4: "RS", 5: "BA", 6: "PE", 7: "CE", 8: "PA", 9: "PR", 10: "DF", 11: "AM",
+          12: "SC", 13: "PB", 14: "RO", 15: "SP", 16: "MA", 17: "ES", 18: "GO", 19: "AL", 20: "SE", 21: "RN",
+          22: "PI", 23: "MT", 24: "MS"}
+# TJ: código TR do CNJ → (UF, id no EasyJur)
+TJ = {1: ("AC", 104), 2: ("AL", 107), 3: ("AP", 116), 4: ("AM", 350), 5: ("BA", 122), 6: ("CE", 129),
+      7: ("DF", 134), 8: ("ES", 143), 9: ("GO", 152), 10: ("MA", 157), 11: ("MT", 187), 12: ("MS", 178),
+      13: ("MG", 170), 14: ("PA", 191), 15: ("PB", 197), 16: ("PR", 228), 17: ("PE", 209), 18: ("PI", 213),
+      19: ("RJ", 242), 20: ("RN", 251), 21: ("RS", 265), 22: ("RO", 255), 23: ("RR", 257), 24: ("SC", 275),
+      25: ("SE", 280), 26: ("SP", 299), 27: ("TO", 305)}
+TRF = {1: 344, 2: 345, 3: 351, 4: 347, 5: 348, 6: 1059}
+AREA = {"trabalhista": 6, "civel": 2, "previdenciario": 5, "tributario": 7}
+
+
+def tribunal(d):
+    """(id do tribunal, área, qualificação do cliente, UF) ou None se o ramo/tribunal não for TRT, TJ ou TRF."""
+    j, tr = d["justica"], int(d["tr"])
+    if j == "5" and tr in TRT:
+        return TRT[tr], AREA["trabalhista"], "Reclamante", UF_TRT[tr]
+    if j == "8" and tr in TJ:
+        return TJ[tr][1], AREA["civel"], "Autor", TJ[tr][0]
+    if j == "4" and tr in TRF:
+        area = AREA["tributario"] if "tribut" in normal(d["assunto"] + " " + d["classe"]) else AREA["previdenciario"]
+        return TRF[tr], area, "Autor", None
+    return None
+
+
+def comarca(ej, orgao, uf):
+    """Id da comarca pela cidade no fim do nome da vara ("Vara do Trabalho de Parauapebas",
+    "Vara Única de São Félix do Xingu"): busca pela última palavra e aceita o nome que fecha com o fim da vara."""
+    texto = re.sub(r"\s*[-/]\s*[A-Z]{2}\s*$", "", orgao or "")
+    palavras = normal(texto).split()
+    candidatos = {" ".join(palavras[i + 1:]) for i, w in enumerate(palavras[:-1]) if w in ("de", "da", "do")}
+    if not candidatos:
+        return None
+    args = {"nome": palavras[-1], "page_size": 50}
+    if uf:
+        args["uf"] = uf
+    for c in _lista(ej.chamar("list_comarcas", **args)):
+        if normal(c.get("nome")) in candidatos:
+            return c.get("id")
+    return None
+
+
 RE_CNJ = re.compile(r"\b(\d{7}-\d{2}\.\d{4}\.(\d)\.(\d{2})\.\d{4})\b")
 EMPRESA = re.compile(r"\b(ltda|s\.?\s?a\.?|s/a|eireli|me|epp|mei|banco|cia|companhia|instituto|inss|"
                      r"municipio|estado|uniao|associacao|cooperativa|condominio|engenharia|servicos|comercio)\b")
@@ -43,9 +85,11 @@ def normal(s):
 
 def _campo(texto, *rotulos):
     for r in rotulos:
-        m = re.search(rf"^[ \t]*{r}:[ \t]*\n?[ \t]*(\S.*?)[ \t]*$", texto, re.M)
-        if m and m.group(1).strip():
-            return m.group(1).strip()
+        for m in re.finditer(rf"^[ \t]*{r}:[ \t]*\n?[ \t]*(\S.*?)[ \t]*$", texto, re.M):
+            v = m.group(1).strip()
+            # "Assunto:" do cabeçalho do e-mail encaminhado ("[TRT08] [PUSH] ...") não é campo do processo
+            if v and not re.match(r"\[|(RES|ENC|FW|FWD|RE):|Movimenta[cç][aã]o processual", v, re.I):
+                return v
     return ""
 
 
@@ -119,15 +163,15 @@ def pessoa(ej, nome, tipo):
 
 def cadastrar(ej, d):
     """Cria o processo. Devolve (id_processo, cliente_novo?, contrario_novo?)."""
-    origem, area, qualificacao = TRIBUNAIS[(d["justica"], d["tr"])]
+    origem, area, qualificacao, uf = tribunal(d)
     cliente, c_novo = pessoa(ej, d["autor"], "cliente")
     contrario, x_novo = pessoa(ej, d["reu"], "parte_adversa") if d["reu"] else (None, False)
-    comarca = next((v for k, v in COMARCAS.items() if k in normal(d["orgao"])), None)
+    id_comarca = comarca(ej, d["orgao"], uf)
     obs = (f"Cadastrado pelo robô em {datetime.now():%d/%m/%Y} a partir do e-mail de distribuição do tribunal "
            f"(autuação {d['autuacao']:%d/%m/%Y}). Conferir: valor da causa, pedidos, pasta do cliente e ativar o PUSH."
            + (f" Assunto: {d['assunto']}." if d["assunto"] else ""))
     r = ej.chamar("create_processo", numero=d["numero"], id_advogado=d["advogado"], id_cliente=cliente,
-                  id_contrario=contrario, area=area, tribunal_orgao=origem, comarca=comarca, uf=UF.get(d["tr"]),
+                  id_contrario=contrario, area=area, tribunal_orgao=origem, comarca=id_comarca, uf=uf,
                   distribuicao=d["autuacao"].isoformat(), vara_turma=d["orgao"][:255] or None,
                   titulo_acao=d["classe"] or None, qualificacao=qualificacao, instancia="1",
                   status_processo=1, tipo_processo="judicial", observacoes=obs)
@@ -178,8 +222,8 @@ def rodada(zaia, easyjur_fn, buscar_emails, agora, contagem, d_mod, grupo_msgs=(
         if d_mod.DRY_RUN:
             _log("[simulação] cadastraria um processo novo")
             continue
-        if (d["justica"], d["tr"]) not in TRIBUNAIS or not d["autor"]:
-            motivo = "tribunal ainda não configurado" if d["autor"] else "e-mail sem o nome do cliente"
+        if not tribunal(d) or not d["autor"]:
+            motivo = "não é TRT, TJ nem TRF" if d["autor"] else "e-mail sem o nome do cliente"
             zaia.chamar("enviar_mensagem_grupo", assinatura="ia", grupoId=d_mod.GRUPO, texto=aviso_manual(d, motivo))
             continue
         try:

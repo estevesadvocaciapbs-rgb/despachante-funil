@@ -47,6 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GOOGLE_AGENDA_URL: ${{ secrets.GOOGLE_AGENDA_URL }}
           GOOGLE_AGENDA_CHAVE: ${{ secrets.GOOGLE_AGENDA_CHAVE }}
+          GOOGLE_GMAIL_URL: ${{ secrets.GOOGLE_GMAIL_URL }}
           PYTHONUNBUFFERED: "1"
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.simulacao }}" = "true" ]; then

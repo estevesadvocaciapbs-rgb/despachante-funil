@@ -77,6 +77,11 @@ class EasyJur:
         if f == "create_pessoa":
             self.pessoas.append({"id": 900 + len(self.pessoas), "nome": k["nome"]})
             return {"id": self.pessoas[-1]["id"]}
+        if f == "list_comarcas":
+            todas = [{"id": 2507, "nome": "Parauapebas", "uf": "PA"}, {"id": 3001, "nome": "São Félix do Xingu", "uf": "PA"},
+                     {"id": 4001, "nome": "Maceió", "uf": "AL"}]
+            return {"data": [c for c in todas if di.normal(k["nome"]) in di.normal(c["nome"])
+                             and k.get("uf") in (None, c["uf"])]}
         if f == "create_processo":
             self.processos.add(k["numero"])
             return {"id_processo": 555}
@@ -125,8 +130,22 @@ assert not any(f == "create_pessoa" for f, _ in ej.chamadas) and "Cliente cadast
 assert rodar([TRT], EasyJur(), grupo=[env[0], "📥 *PROCESSO NOVO CADASTRADO PELO ROBÔ* — 0009999-11.2026.5.08.0114"]) == []
 # autuação antiga (e-mail de processo velho): ignora
 assert rodar([TRT], EasyJur(), agora=AGORA + timedelta(days=10)) == []
-# tribunal não configurado: não cadastra, só avisa
-outro = TRT.replace("5.08.0114", "5.15.0001")
+# qualquer TRT (ex.: TRT-19, cliente de Alagoas): cadastra no tribunal certo, com UF e comarca
+outro = TRT.replace("5.08.0114", "5.19.0001").replace("DE PARAUAPEBAS", "DE MACEIÓ")
+ej = EasyJur()
+env = rodar([outro], ej)
+cria = [k for f, k in ej.chamadas if f == "create_processo"][0]
+assert cria["tribunal_orgao"] == 108 and cria["uf"] == "AL" and cria["comarca"] == 4001 and cria["area"] == 6
+assert "Assunto: [" not in cria["observacoes"]  # o assunto do e-mail encaminhado não é o assunto do processo
+# cidade com "do" no nome
+assert di.comarca(EasyJur(), "Vara Única de São Félix do Xingu", "PA") == 3001
+assert di.comarca(EasyJur(), "Vara do Trabalho de Parauapebas - PA", "PA") == 2507
+# qualquer TJ e qualquer TRF
+assert di.tribunal({"justica": "8", "tr": "26", "assunto": "", "classe": ""})[:2] == (299, 2)
+assert di.tribunal({"justica": "4", "tr": "01", "assunto": "Aposentadoria", "classe": ""})[:2] == (344, 5)
+assert di.tribunal({"justica": "4", "tr": "03", "assunto": "Repetição de indébito tributário", "classe": ""})[:2] == (351, 7)
+# outro ramo (ex.: Justiça Eleitoral, J=6): não cadastra, só avisa
+outro = TRT.replace("5.08.0114", "6.15.0001")
 ej = EasyJur()
 env = rodar([outro], ej)
 assert len(env) == 1 and "SEM CADASTRO" in env[0] and not any(f.startswith("create") for f, _ in ej.chamadas)
