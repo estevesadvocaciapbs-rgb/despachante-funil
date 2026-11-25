@@ -31,6 +31,7 @@ function configurar() {
   // Força a autorização de todas as permissões na primeira execução.
   CalendarApp.getDefaultCalendar();
   UrlFetchApp.getRequest('https://meet.googleapis.com/v2/spaces');
+  testarDistribuicoes();
 }
 
 /** Teste à mão no editor: cria uma sala e mostra se ela nasceu aberta. */
@@ -49,6 +50,7 @@ function doPost(e) {
     if (p.acao === 'buscar') return saida(buscar(p));
     if (p.acao === 'procurar_pasta') return saida({ ok: true, candidatos: procurarPasta(p.nome, p.area) });
     if (p.acao === 'guardar') return saida(guardar(p));
+    if (p.acao === 'distribuicoes') return saida(distribuicoes(p));
     if (p.acao === 'teste') return saida({ ok: true, calendario: CALENDARIO });
     return saida({ ok: false, erro: 'ação desconhecida' });
   } catch (err) {
@@ -280,4 +282,49 @@ function testarCriarEvento() {
   var ev = Calendar.Events.get(CALENDARIO, r.id);
   Logger.log(JSON.stringify({ link: r.link, aberta: r.aberta, linkDaAgenda: ev.hangoutLink || '', local: ev.location }));
   Calendar.Events.remove(CALENDARIO, r.id);
+}
+
+
+/**
+ * Processo novo (25/11): lê no Gmail os e-mails "Push" do PJe com o evento de distribuição e devolve o texto
+ * para o despachante cadastrar no EasyJur o que ninguém cadastrou. Só LEITURA (permissão gmail.readonly);
+ * a API do Gmail precisa estar ativada no projeto "Ponte Agenda Escritorio".
+ */
+var GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages';
+
+function distribuicoes(p) {
+  var dias = Math.min(Math.max(Number(p.dias) || 5, 1), 15);
+  var q = 'newer_than:' + dias + 'd ("Distribuído por" OR "Distribuido por" OR "Tipo de Distribuição")';
+  var cab = { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } };
+  var lista = JSON.parse(UrlFetchApp.fetch(GMAIL + '?maxResults=50&q=' + encodeURIComponent(q), cab).getContentText());
+  var mensagens = (lista.messages || []).map(function (m) {
+    var msg = JSON.parse(UrlFetchApp.fetch(GMAIL + '/' + m.id + '?format=full', cab).getContentText());
+    return { id: m.id, texto: textoDe(msg.payload).slice(0, 8000) };
+  });
+  return { ok: true, mensagens: mensagens };
+}
+
+function textoDe(parte) {
+  if (!parte) return '';
+  var dado = parte.body && parte.body.data;
+  if (parte.mimeType === 'text/plain' && dado) return decodificar(dado);
+  var partes = parte.parts || [];
+  for (var i = 0; i < partes.length; i++) {
+    var t = textoDe(partes[i]);
+    if (t) return t;
+  }
+  if (parte.mimeType === 'text/html' && dado) {
+    return decodificar(dado).replace(/<br\s*\/?>|<\/p>|<\/tr>|<\/div>/gi, '\n').replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&iacute;/g, 'í').replace(/[ \t]+/g, ' ');
+  }
+  return '';
+}
+
+function decodificar(dado) {
+  return Utilities.newBlob(Utilities.base64DecodeWebSafe(dado)).getDataAsString('UTF-8');
+}
+
+/** Teste à mão no editor: quantos avisos de distribuição chegaram nos últimos 15 dias. */
+function testarDistribuicoes() {
+  Logger.log('avisos de distribuição nos últimos 15 dias: ' + distribuicoes({ dias: 15 }).mensagens.length);
 }

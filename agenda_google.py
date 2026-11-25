@@ -57,3 +57,10 @@ def guardar_arquivos(tel, de, ate, nome, area=None, escolha=None, criar=False, n
 
 def testar():
     return _chamar({"acao": "teste"}, timeout=30) if configurado() else None
+
+
+def distribuicoes(dias=5):
+    """E-mails de distribuição do PJe (Push) dos últimos `dias` no Gmail do escritório: [{'id','texto'}] ou None."""
+    if not configurado():
+        return None
+    return _chamar({"acao": "distribuicoes", "dias": dias}, timeout=120).get("mensagens", [])

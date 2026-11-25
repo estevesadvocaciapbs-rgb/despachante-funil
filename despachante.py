@@ -2343,6 +2343,15 @@ def main():
         confirmar(zaia, conversas, easyjur_fn, agenda_fn, leads_conf, pendentes, agora, contagem, grupo)
     except OrcamentoEasyJur as erro:  # sem EasyJur não dá para ofertar nem gravar; o resto segue
         _avisar_orcamento(zaia, erro)
+    try:  # processo novo distribuído (e-mail Push do PJe) que ninguém cadastrou no EasyJur: o robô cadastra (25/11)
+        import agenda_google
+        import distribuicoes
+        distribuicoes.rodada(zaia, easyjur_fn, agenda_google.distribuicoes, datetime.now(BRT), contagem,
+                             sys.modules[__name__], grupo.get("mensagens", []))
+    except OrcamentoEasyJur as erro:
+        _avisar_orcamento(zaia, erro)
+    except Exception as erro:
+        log(f"cadastro de processo novo falhou: {type(erro).__name__}")
     try:  # analista de viabilidade do lead trabalhista, em modo teste: parecer só para a equipe (24/11)
         import analista
         analista.rodada(zaia, conversas, leads, grupo, datetime.now(timezone.utc), contagem, sys.modules[__name__])
