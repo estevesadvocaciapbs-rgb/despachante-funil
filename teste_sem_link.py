@@ -52,7 +52,7 @@ class Z:
 
 
 def rodar(itens, msgs=(), **kw):
-    r._estado.update(ultima=None, avisados=set())
+    r._estado.update(ultima=None, avisados=set(), conferidos=set())
     ej, z = EJ(itens, **kw), Z(msgs)
     r.rodada(z, lambda: ej, d.Conversas(z), AGORA, {}, d)
     return ej, z
@@ -78,6 +78,32 @@ for it in (item(local="https://meet.google.com/x"), item(local="Presencial — e
            item(hora_inicio="09:30"), item(hora_inicio="00:00"), item(tipo="TAREFA")):
     ej, z = rodar([it])
     assert not [f for f, k in ej.env if f == "update_agenda"] and not [f for f, k in z.env if f == "agendar_mensagem"]
+
+# remarcada à mão com o link antigo (26/11): o link só foi mandado para o dia 26/10 -> vencido
+ANTIGO = "https://meet.google.com/old-link-xxx"
+MSGS_26 = [{"sender": "USER", "createdAt": "2026-10-25T18:53:00.000Z",
+            "content": f"Olá! Este é o link do seu atendimento, segunda-feira, 26/10, às 11h00: {ANTIGO}"},
+           {"sender": "USER", "createdAt": "2026-10-26T11:00:00.000Z",
+            "content": f"Bom dia! Lembrete do seu atendimento de hoje, às 11h00. O link de acesso é: {ANTIGO}"},
+           {"sender": "AGENT", "createdAt": "2026-10-26T13:25:00.000Z", "content": "Confirmado terça às 14h30."}]
+ej, z = rodar([item(local=ANTIGO)], MSGS_26)
+assert [k for f, k in ej.env if f == "update_agenda"][0]["local"] == "https://meet.google.com/aaa-bbbb-ccc"
+ag = [k for f, k in z.env if f == "agendar_mensagem"]
+assert len(ag) == 2 and "aaa-bbbb-ccc" in ag[0]["mensagem"] and "27/10" in ag[0]["mensagem"]
+assert any("link do atendimento anterior" in k["texto"] for f, k in z.env if f == "enviar_mensagem")
+# o link já foi mandado para hoje, ou foi mandado solto (sem dizer o dia), ou nunca foi mandado: não mexe
+for msgs in ([dict(MSGS_26[0], content=f"Link do atendimento de terça, 27/10, às 14h30: {ANTIGO}")],
+             MSGS_26 + [{"sender": "AGENT", "createdAt": "2026-10-26T13:30:00.000Z", "content": f"Segue: {ANTIGO}"}],
+             []):
+    ej, z = rodar([item(local=ANTIGO)], msgs)
+    assert not [f for f, k in ej.env if f == "update_agenda"] and not [f for f, k in z.env if f == "agendar_mensagem"]
+# confere uma vez só por plantão
+r._estado.update(ultima=None, avisados=set(), conferidos=set())
+ej, z = EJ([item(local=ANTIGO)]), Z([MSGS_26[2]])
+r.rodada(z, lambda: ej, d.Conversas(z), AGORA, {}, d)
+r._estado["ultima"] = None
+r.rodada(z, lambda: ej, d.Conversas(z), AGORA, {}, d)
+assert len([f for f, k in z.env if f == "buscar_conversa_por_telefone"]) == 1
 # a equipe já mandou um link na conversa: só copia para o EasyJur, sem mensagem ao cliente
 msg = {"sender": "USER", "content": "*Thalyta*:\nLink: https://meet.google.com/zzz-yyyy-xxx",
        "createdAt": "2026-10-27T11:00:00.000Z"}
