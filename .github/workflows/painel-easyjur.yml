@@ -1,0 +1,40 @@
+name: Painel - prazos do EasyJur
+
+on:
+  schedule:
+    # 6h40 e 19h55 de Belém (9h40 e 22h55 UTC), antes das rodadas do painel no Google (7h e 20h15).
+    - cron: "40 9 * * *"
+    - cron: "55 22 * * *"
+  workflow_dispatch:
+    inputs:
+      simulacao:
+        description: "Só simular (lê o EasyJur e mostra as contagens, sem gravar no painel)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: painel-easyjur
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gravar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Mandar prazos e clientes ativos ao painel
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
+          TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
+          GOOGLE_PLANILHA_URL: ${{ secrets.GOOGLE_PLANILHA_URL }}
+          GOOGLE_PLANILHA_CHAVE: ${{ secrets.GOOGLE_PLANILHA_CHAVE }}
+          PYTHONUNBUFFERED: "1"
+          SIMULAR: ${{ inputs.simulacao && '--simular' || '' }}
+        run: python painel_easyjur.py $SIMULAR

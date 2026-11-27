@@ -50,6 +50,7 @@ function doPost(e) {
       if (p.acao === 'ler_clientes') return saida(lerClientes());
       if (p.acao === 'gravar_clientes') return saida(gravarClientes(p.clientes));
       if (p.acao === 'teste') return saida(teste());
+      if (p.acao === 'painel_easyjur') return saida(painelGravarEasyjur(p.prazos, p.clientes));  // painel.gs
       return saida({ ok: false, erro: 'ação desconhecida' });
     } finally {
       trava.releaseLock();
