@@ -288,6 +288,25 @@ Não usa IA e só usa as ferramentas oficiais da Za.Ia (`listar_conversas` e `le
 - **Log:** só contagens. Falha avisa o Dr. Lucas no privado, uma vez por dia.
 - Teste: `python teste_conversas_dia.py`.
 
+## Painel de Gestão (`painel_easyjur.py` + `ponte_planilha_painel.gs`, desde 27/11/2026)
+
+Planilha "Painel de Gestão – produtividade e custos" (pasta Escritório › Painel de Gestão, conta do escritório).
+Sem IA, só código. Duas partes:
+
+- **GitHub (`painel_easyjur.py`, workflow "Painel - prazos do EasyJur", 6h40 e 19h55):** lê no EasyJur os prazos
+  de 7 dias atrás a 7 dias à frente e os clientes com processo ativo e manda à ponte (ação `painel_easyjur`). O log
+  mostra só contagens. Roda no GitHub porque o EasyJur recusa o IP do VPS.
+- **Google (`painel.gs` no projeto "Ponte Planilha", gatilhos 7h e 20h15):** varre as pastas Processos, Mídias -
+  Whatsapp, OC Parauapebas e Escritório (arquivos criados e alterados, autor pelo próprio Drive, sessões de trabalho
+  nos arquivos Google) e monta as abas Arquivos, Atividades por cliente, Por pessoa e dia, Clientes parados (+7
+  dias), Prazos da semana (prazo x documento novo na pasta), Custo por cliente, Conversas (WhatsApp) e Visão do
+  cliente.
+- **Limites:** Word, PDF e imagem contam como atividade com 0 minuto (o Drive não guarda histórico deles); tempo
+  só aberto o Google não registra; com login comum tudo sai como "conta do escritório".
+- **Configurar:** custo da hora na aba Equipe; nome do EasyJur que não acha a pasta vai na aba "Ajustes de pasta".
+- **Atualizar o código no Google:** colar `ponte_planilha_painel.gs` no arquivo painel.gs trocando `PAINEL_ID`
+  pelo id da planilha; `painelInicial()` refaz os últimos 30 dias.
+
 ## Parcelas do mês (`recebimentos.py`, desde 21/10/2026)
 
 No 1º dia útil de cada mês (8h de Belém; nova tentativa às 11h), o workflow
