@@ -1,0 +1,51 @@
+name: Conversas do dia
+
+on:
+  schedule:
+    # 19h, 19h20 e 19h40 de Belém (22h, 22h20 e 22h40 UTC). Cada execução regrava hoje e ontem na planilha
+    # (troca as linhas desses dias), então as repetições não duplicam nada.
+    - cron: "0 22 * * *"
+    - cron: "20 22 * * *"
+    - cron: "40 22 * * *"
+  # Rodar sem clique: um commit em conversas-dia-agora.txt grava hoje e ontem na hora.
+  push:
+    branches: [main]
+    paths: ["conversas-dia-agora.txt"]
+  workflow_dispatch:
+    inputs:
+      datas:
+        description: "Dias a regravar, AAAA-MM-DD separados por espaço (vazio = ontem e hoje)"
+        type: string
+        default: ""
+      simulacao:
+        description: "Só simular (lê Za.Ia e EasyJur e mostra as contagens, sem gravar na planilha)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: conversas-dia
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gravar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Gravar as conversas na planilha
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          EASYJUR_TOKEN: ${{ secrets.EASYJUR_TOKEN }}
+          TELEFONES_EQUIPE: ${{ secrets.TELEFONES_EQUIPE }}
+          GOOGLE_PLANILHA_URL: ${{ secrets.GOOGLE_PLANILHA_URL }}
+          GOOGLE_PLANILHA_CHAVE: ${{ secrets.GOOGLE_PLANILHA_CHAVE }}
+          PYTHONUNBUFFERED: "1"
+          DATAS: ${{ inputs.datas }}
+          SIMULAR: ${{ inputs.simulacao && '--simular' || '' }}
+        run: python conversas_dia.py $SIMULAR $DATAS

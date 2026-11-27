@@ -263,6 +263,31 @@ semana), a conversão de cada etapa e o mesmo funil só do tráfego pago. A orig
 ("Tráfego pago", "Indicação ..."). Envio fora de hora sem clique: commit em `funil-semanal-agora.txt`. O log mostra
 só contagens.
 
+## Conversas do dia (`conversas_dia.py`, desde 27/11/2026)
+
+Todo dia às 19h (repete às 19h20 e às 19h40), o workflow "Conversas do dia" grava uma linha por conversa de
+WhatsApp do dia na planilha **"Conversas WhatsApp – banco diário"** do Drive do escritório, para o painel de gestão.
+Não usa IA e só usa as ferramentas oficiais da Za.Ia (`listar_conversas` e `ler_conversa`).
+
+- **O que vai para a planilha** (só números e horários, nunca o texto das mensagens): data, conversa e contato da
+  Za.Ia, nome, telefone, tipo, id da pessoa no EasyJur, nº de processos ativos, mensagens do cliente, da equipe e
+  da Annie, retomadas (mensagem depois de 1 h parada), 1ª e última mensagem, quem iniciou, sem resposta (1/0) e há
+  quantos minutos, quem respondeu (pela assinatura) e mensagens por pessoa.
+- **Tipo:** "cliente ativo" = o telefone é de cliente com processo ativo no EasyJur; "lead" = conversa aberta há
+  até 60 dias, sem processo ativo e sem etiqueta Cliente ou Reclamada; "outro" = o resto. Os números da equipe
+  ficam de fora.
+- **Ontem é regravado:** cada execução grava hoje (até a hora da execução) e regrava ontem inteiro, para pegar o
+  que chegou depois das 19h. Regravar um dia troca as linhas dele, sem duplicar.
+- **Cota do EasyJur:** o telefone de cada cliente fica guardado na aba oculta `_clientes` da própria planilha, e
+  só pessoa nova vai ao `get_pessoa` (no máximo 60 por execução).
+- **Ponte:** `ponte_planilha.gs`, um Apps Script ligado à planilha, que só mexe nela. Segredos
+  `GOOGLE_PLANILHA_URL` e `GOOGLE_PLANILHA_CHAVE` (a chave sai da função `configurar()` do script).
+- **Refazer ou preencher dias passados:** Actions › "Conversas do dia" › Run workflow, com as datas
+  (AAAA-MM-DD). "Só simular" lê tudo e mostra só as contagens, sem gravar. Um commit em `conversas-dia-agora.txt`
+  roda na hora.
+- **Log:** só contagens. Falha avisa o Dr. Lucas no privado, uma vez por dia.
+- Teste: `python teste_conversas_dia.py`.
+
 ## Parcelas do mês (`recebimentos.py`, desde 21/10/2026)
 
 No 1º dia útil de cada mês (8h de Belém; nova tentativa às 11h), o workflow

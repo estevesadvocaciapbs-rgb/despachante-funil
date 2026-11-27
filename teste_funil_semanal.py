@@ -16,17 +16,17 @@ def ag(i, data, status, nome, oport=None, cad="2026-11-10", hora="14:30", proces
             "data_cadastro": cad, "hora_inicio": hora, "processo": processo, "codigo_publicacao": pub}
 
 
-OPS = [op(1, "Tráfego pago", "1", "Nereu Bonfim"), op(2, "Tráfego pago", "5", "Fabricia Coelho", enc="2026-11-13"),
-       op(3, "Indicação Isaias", "5", "Faby Aguiar", data="2026-11-11", enc="2026-11-12"),
-       op(4, "Cliente - Fernanda", "4", "Erica Ralane Carneiro", data="2026-11-13", enc="2026-11-13",
+OPS = [op(1, "Tráfego pago", "1", "Ana Teste"), op(2, "Tráfego pago", "5", "Bia Exemplo", enc="2026-11-13"),
+       op(3, "Indicação Joana", "5", "Caio Ficticio", data="2026-11-11", enc="2026-11-12"),
+       op(4, "Cliente - Fernanda", "4", "Dora Inventada Souza", data="2026-11-13", enc="2026-11-13",
           adv="Fernanda Mesquita")]
-ANTIGA = op(9, "Tráfego pago", "1", "Rogério", data="2026-11-05")
-AGENDA = [ag(10, "2026-11-09", "C", "Rogério", oport=9, cad="2026-11-06"),
-          dict(ag(11, "2026-11-09", "S", "Wan Lucia", cad="2026-11-05"), descricao="Reunião com lead — Wan (5575988059043)."),
-          dict(ag(12, "2026-11-11", "A", "", hora="14:00", cad="2026-11-09"), descricao="Atendimento Érica, família.\n"),
-          ag(13, "2026-11-12", "C", "Suane Lopes", hora="00:00", processo=55, pub="225"),  # publicação: fora
-          ag(14, "2026-11-12", "C", "Faby Aguiar", oport=3, cad="2026-11-11"),
-          ag(15, "2026-11-13", "A", "Moisés Neto", oport=1, cad="2026-11-13", hora="18:30")]  # ainda vai acontecer
+ANTIGA = op(9, "Tráfego pago", "1", "Ivo", data="2026-11-05")
+AGENDA = [ag(10, "2026-11-09", "C", "Ivo", oport=9, cad="2026-11-06"),
+          dict(ag(11, "2026-11-09", "S", "Eva Modelo", cad="2026-11-05"), descricao="Reunião com lead — Eva (5500000000201)."),
+          dict(ag(12, "2026-11-11", "A", "", hora="14:00", cad="2026-11-09"), descricao="Atendimento Dora, família.\n"),
+          ag(13, "2026-11-12", "C", "Gil Amostra", hora="00:00", processo=55, pub="225"),  # publicação: fora
+          ag(14, "2026-11-12", "C", "Caio Ficticio", oport=3, cad="2026-11-11"),
+          ag(15, "2026-11-13", "A", "Hugo Teste", oport=1, cad="2026-11-13", hora="18:30")]  # ainda vai acontecer
 
 
 class FakeEJ:
@@ -66,9 +66,9 @@ class FakeZ:
             return {"contatos": {"novos": 24, "reengajados": 49}}
         if ferr == "listar_contatos":
             assert x["etiqueta"] == "Tráfego Pago"
-            return {"contatos": [{"phone": "5575988059043", "createdAt": "2026-11-04T14:01:29.442Z"},
-                                 {"phone": "5592986106920", "createdAt": "2026-11-13T17:27:59.000Z"},
-                                 {"phone": "5574998017910", "createdAt": "2026-11-13T12:29:44.000Z"}]}
+            return {"contatos": [{"phone": "5500000000201", "createdAt": "2026-11-04T14:01:29.442Z"},
+                                 {"phone": "5500000000202", "createdAt": "2026-11-13T17:27:59.000Z"},
+                                 {"phone": "5500000000203", "createdAt": "2026-11-13T12:29:44.000Z"}]}
         if ferr == "ler_grupo":
             return {"mensagens": self.grupo}
         if ferr == "enviar_mensagem_grupo":
@@ -81,7 +81,7 @@ class FakeZ:
 
 assert f.semana(date(2026, 11, 13)) == (date(2026, 11, 9), date(2026, 11, 13))
 assert f.semana(date(2026, 11, 15)) == (date(2026, 11, 9), date(2026, 11, 13))
-assert f.origem("Tráfego pago") == "Tráfego pago" and f.origem("Indicação Isaias") == "Indicação"
+assert f.origem("Tráfego pago") == "Tráfego pago" and f.origem("Indicação Joana") == "Indicação"
 assert f.origem("Trabalhista — Maria") == "Outros"
 
 # fora de sexta ou antes das 17h30 não envia
@@ -97,13 +97,13 @@ assert "👥 *Leads novos no WhatsApp* 24 (tráfego pago 2)" in msg and "(mais 4
 assert "📝 *Casos triados* 4 (tráfego pago 2, indicação 1, sem origem marcada 1)" in msg
 assert "📅 *Reuniões agendadas na semana* 3" in msg  # 12, 14, 15 (a 10 e a 11 foram cadastradas antes)
 assert "🗓️ *Reuniões marcadas para a semana* 5" in msg  # a da publicação fica fora
-assert "✅ Realizadas 2" in msg and "❌ Canceladas 1 (Wan Lucia)" in msg
-assert "❔ Sem baixa no EasyJur 1 (\"Atendimento Érica\" 11/11)" in msg and "⏳ Ainda vão acontecer 1" in msg
-assert "🤝 *Contratos fechados* 1\nErica Ralane (sem origem marcada, Fernanda)" in msg and "🚫 *Não fecharam* 2" in msg
+assert "✅ Realizadas 2" in msg and "❌ Canceladas 1 (Eva Modelo)" in msg
+assert "❔ Sem baixa no EasyJur 1 (\"Atendimento Dora\" 11/11)" in msg and "⏳ Ainda vão acontecer 1" in msg
+assert "🤝 *Contratos fechados* 1\nDora Inventada (sem origem marcada, Fernanda)" in msg and "🚫 *Não fecharam* 2" in msg
 assert "Lead novo para reunião agendada 12%" in msg and "Reunião marcada para realizada 40%" in msg
 assert "Reunião realizada para contrato 50%" in msg
-# tráfego pago: leads 2 (etiqueta, contato novo na semana), triados 2 (Nereu, Fabricia), agendada 1 (Moisés),
-# marcadas 3 (Rogério pelo nome da oportunidade, Moisés, Wan Lucia pela etiqueta do telefone da descrição)
+# tráfego pago: leads 2 (etiqueta, contato novo na semana), triados 2 (Ana, Bia), agendada 1 (Hugo),
+# marcadas 3 (Ivo pelo nome da oportunidade, Hugo, Eva Modelo pela etiqueta do telefone da descrição)
 assert "Leads 2, triados 2, reuniões agendadas 1, marcadas para a semana 3, realizadas 1, canceladas 1, contratos 0" in msg
 assert "Lead do anúncio para reunião agendada 50%" in msg
 assert ":" not in msg.split("\n", 1)[1].replace("17h30", ""), "sem dois-pontos no texto"
