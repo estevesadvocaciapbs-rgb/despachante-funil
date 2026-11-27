@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f4f3f0; --surface:#fcfcfb; --surface-2:#f0efec; --line:#e2e0da;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#7a7873;
+  --s1:#2a78d6; --s1-soft:#cde2fb; --brand:#1d2b3a;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --good-ink:#006300; --crit-ink:#a32323; --warn-ink:#7a5200;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    color-scheme:dark;
+    --bg:#121211; --surface:#1a1a19; --surface-2:#242422; --line:#33332f;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#9a998f;
+    --s1:#3987e5; --s1-soft:#1c3a5e; --brand:#0d1620;
+    --good-ink:#5fd35f; --crit-ink:#ff8a8a; --warn-ink:#fab219;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
+a{color:var(--s1);text-decoration:none} a:hover{text-decoration:underline}
+header{background:var(--brand);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.2px}
+header .sub{font-size:12px;opacity:.75}
+header .dir{margin-left:auto;font-size:12px;opacity:.8;text-align:right}
+nav{display:flex;gap:2px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto;position:sticky;top:0;z-index:5}
+nav button{border:0;background:none;color:var(--text-2);font:inherit;padding:12px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--text);border-bottom-color:var(--s1);font-weight:600}
+nav .badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:9px;font-size:11px;line-height:18px;text-align:center;background:var(--crit);color:#fff}
+main{max-width:1280px;margin:0 auto;padding:18px 20px 60px}
+.filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.filtros label{font-size:12px;color:var(--text-2)}
+select,input[type=search]{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+input[type=search]{min-width:240px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;font:inherit;padding:7px 12px;color:var(--text-2);cursor:pointer}
+.seg button.on{background:var(--s1);color:#fff}
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.dois{grid-template-columns:repeat(auto-fit,minmax(380px,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h2{font-size:14px;margin:0 0 2px;font-weight:600}
+.card .nota{font-size:12px;color:var(--muted);margin:0 0 12px}
+.kpi .rot{font-size:12px;color:var(--text-2)}
+.kpi .val{font-size:28px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .det{font-size:12px;color:var(--muted)}
+.kpi.clic{cursor:pointer} .kpi.clic:hover{border-color:var(--s1)}
+/* barras verticais */
+.colunas{display:flex;align-items:flex-end;gap:2px;height:180px;border-bottom:1px solid var(--line);position:relative}
+.colunas .c{flex:1;height:100%;display:flex;align-items:flex-end;cursor:default}
+.colunas .c i{display:block;width:100%;background:var(--s1);border-radius:4px 4px 0 0;min-height:0}
+.colunas .c:hover i{filter:brightness(1.15)}
+.eixo{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+/* barras horizontais */
+.hb{display:grid;grid-template-columns:minmax(120px,38%) 1fr auto;gap:6px 10px;align-items:center;font-size:13px}
+.hb .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.hb .t{background:var(--surface-2);border-radius:4px;height:12px}
+.hb .t i{display:block;height:100%;background:var(--s1);border-radius:0 4px 4px 0}
+.hb .v{font-variant-numeric:tabular-nums;color:var(--text-2);text-align:right;min-width:40px}
+.hb .clic{cursor:pointer} .hb .clic:hover{color:var(--s1)}
+/* tabelas */
+.tab{width:100%;border-collapse:collapse;font-size:13px}
+.tab th{text-align:left;font-weight:600;color:var(--text-2);font-size:12px;border-bottom:1px solid var(--line);padding:8px;cursor:pointer;white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+.tab td{border-bottom:1px solid var(--line);padding:8px;vertical-align:top}
+.tab tr.clic{cursor:pointer} .tab tr.clic:hover td{background:var(--surface-2)}
+.tab .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rolar{max-height:620px;overflow:auto}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap;padding:2px 8px;border-radius:10px;background:var(--surface-2)}
+.st::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.st.crit{color:var(--crit-ink)} .st.crit::before{background:var(--crit)}
+.st.warn{color:var(--warn-ink)} .st.warn::before{background:var(--warn)}
+.st.good{color:var(--good-ink)} .st.good::before{background:var(--good)}
+.st.neu{color:var(--text-2)} .st.neu::before{background:var(--muted)}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--surface-2);color:var(--text-2)}
+.aviso{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-2);margin-bottom:14px}
+.desc{color:var(--text-2);max-width:520px}
+.vazio{color:var(--muted);font-size:13px;padding:14px 0}
+#dica{position:fixed;pointer-events:none;background:var(--text);color:var(--surface);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:20;white-space:nowrap}
+#carregando{padding:80px 20px;text-align:center;color:var(--text-2)}
+.voltar{border:0;background:none;color:var(--s1);font:inherit;cursor:pointer;padding:0;margin-bottom:10px}
+.secao{display:none} .secao.on{display:block}
+@media (max-width:640px){ main{padding:12px} .dois{grid-template-columns:1fr} input[type=search]{min-width:0;width:100%} header .dir{margin-left:0;text-align:left} .kpi .val{font-size:23px} }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Painel de Gestão</h1><div class="sub">Esteves Advocacia · produtividade, prazos e custos</div></div>
+  <div class="dir" id="topo"></div>
+</header>
+<nav id="menu">
+  <button data-s="geral" class="on">Visão geral</button>
+  <button data-s="prazos">Prazos</button>
+  <button data-s="clientes">Clientes</button>
+  <button data-s="parados">Clientes parados</button>
+  <button data-s="equipe">Equipe</button>
+  <button data-s="whats">WhatsApp</button>
+</nav>
+<main>
+  <div id="carregando">Carregando os dados do escritório…</div>
+  <div id="app" style="display:none">
+    <div class="filtros" id="filtros">
+      <label>Período</label>
+      <div class="seg" id="periodo">
+        <button data-d="1">Hoje</button><button data-d="7">7 dias</button><button data-d="30" class="on">30 dias</button><button data-d="90">90 dias</button>
+      </div>
+      <label>Origem</label>
+      <select id="origem"><option value="equipe">Trabalho da equipe</option><option value="">Tudo (inclui WhatsApp automático e terceiros)</option></select>
+    </div>
+
+    <section class="secao on" id="s-geral"></section>
+    <section class="secao" id="s-prazos"></section>
+    <section class="secao" id="s-clientes"></section>
+    <section class="secao" id="s-parados"></section>
+    <section class="secao" id="s-equipe"></section>
+    <section class="secao" id="s-whats"></section>
+  </div>
+</main>
+<div id="dica"></div>
+
+<script>
+var D = null, F = { dias: 30, origem: 'equipe' }, SEC = 'geral', CLIENTE = null, ORD = {};
+var A = { data:0, cliente:1, area:2, origem:3, pessoa:4, acao:5, ini:6, fim:7, min:8, custo:9, arq:10, tipo:11, link:12 };
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function num(n){ return Number(n||0).toLocaleString('pt-BR'); }
+function brl(n){ return Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function horas(min){ min=Math.round(min||0); if(min<60) return min+' min'; var h=Math.floor(min/60), m=min%60; return h+' h'+(m?' '+m+' min':''); }
+function br(d){ if(!d) return ''; var p=String(d).slice(0,10).split('-'); return p.length===3? p[2]+'/'+p[1]+'/'+p[0] : String(d); }
+function hojeISO(){ var d=new Date(Date.now()-3*3600e3); return d.toISOString().slice(0,10); }
+function diaISO(off){ var d=new Date(Date.now()-3*3600e3-off*864e5); return d.toISOString().slice(0,10); }
+function norm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function linkPasta(u, txt){ return u? '<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(txt||'abrir pasta')+'</a>' : ''; }
+
+function noPeriodo(){ var de=diaISO(F.dias-1); return D.arquivos.filter(function(l){ return l[A.data]>=de && (!F.origem || l[A.origem]===F.origem); }); }
+
+function agrupa(linhas, chave){
+  var m={}; linhas.forEach(function(l){ var k=typeof chave==='function'?chave(l):l[chave]; if(k===''||k==null) k='(sem cliente)';
+    var g=m[k]||(m[k]={k:k,n:0,min:0,custo:0,ult:'',area:l[A.area]}); g.n++; g.min+=l[A.min]; g.custo+=l[A.custo]; if(l[A.data]>g.ult) g.ult=l[A.data]; });
+  return Object.keys(m).map(function(k){return m[k];});
+}
+
+function alertaClasse(a){ a=String(a||''); if(a.indexOf('🔴')>=0) return 'crit'; if(a.indexOf('⚠')>=0) return 'warn'; if(a.indexOf('🟢')>=0||a.indexOf('✔')>=0) return 'good'; return 'neu'; }
+function alertaTexto(a){ return String(a||'').replace(/^[🔴⚠️🟢✔️\s]+/u,''); }
+function status(a){ return '<span class="st '+alertaClasse(a)+'">'+esc(alertaTexto(a)||'—')+'</span>'; }
+
+/* ---------- gráficos ---------- */
+function colunas(serie, rotulo){ // serie: [{x, y, extra}]
+  var max=Math.max.apply(null, serie.map(function(s){return s.y;}).concat([1]));
+  var h='<div class="colunas">'+serie.map(function(s){
+    var pct=s.y? Math.max(2, s.y/max*100):0;
+    return '<div class="c" data-dica="'+esc(s.dica)+'"><i style="height:'+pct+'%"></i></div>'; }).join('')+'</div>';
+  var ini=serie[0], fim=serie[serie.length-1];
+  return h+'<div class="eixo"><span>'+esc(ini?ini.xl:'')+'</span><span>máx. '+num(max)+' '+esc(rotulo)+'</span><span>'+esc(fim?fim.xl:'')+'</span></div>';
+}
+function hbarras(itens, fmt, acao){
+  if(!itens.length) return '<div class="vazio">Nada neste período.</div>';
+  var max=Math.max.apply(null, itens.map(function(i){return i.v;}).concat([1]));
+  return '<div class="hb">'+itens.map(function(i){
+    return '<div class="n'+(acao?' clic':'')+'" '+(acao?'data-cli="'+esc(i.k)+'"':'')+' title="'+esc(i.k)+'">'+esc(i.k)+'</div>'+
+      '<div class="t" data-dica="'+esc(i.k+': '+fmt(i.v))+'"><i style="width:'+Math.max(1,i.v/max*100)+'%"></i></div><div class="v">'+esc(fmt(i.v))+'</div>'; }).join('')+'</div>';
+}
+function tabela(id, cab, linhas, opc){
+  opc=opc||{}; var o=ORD[id];
+  if(o){ linhas=linhas.slice().sort(function(a,b){ var x=a.v[o.c], y=b.v[o.c]; if(typeof x==='number'&&typeof y==='number') return o.d*(x-y); return o.d*String(x).localeCompare(String(y),'pt-BR'); }); }
+  if(!linhas.length) return '<div class="vazio">'+(opc.vazio||'Nada por aqui.')+'</div>';
+  return '<div class="rolar"><table class="tab" data-tab="'+id+'"><thead><tr>'+cab.map(function(c,i){
+      return '<th data-c="'+i+'" class="'+(c.num?'num':'')+'">'+esc(c.t)+(o&&o.c===i?(o.d>0?' ▲':' ▼'):'')+'</th>'; }).join('')+
+    '</tr></thead><tbody>'+linhas.map(function(l){
+      return '<tr'+(l.cli?' class="clic" data-cli="'+esc(l.cli)+'"':'')+'>'+l.h.map(function(c,i){ return '<td class="'+(cab[i].num?'num':'')+'">'+c+'</td>'; }).join('')+'</tr>'; }).join('')+
+    '</tbody></table></div>';
+}
+
+/* ---------- seções ---------- */
+function kpi(rot, val, det, ir){ return '<div class="card kpi'+(ir?' clic" data-ir="'+ir:'')+'"><div class="rot">'+esc(rot)+'</div><div class="val">'+val+'</div><div class="det">'+(det||'')+'</div></div>'; }
+
+function geral(){
+  var L=noPeriodo(), cli=agrupa(L,A.cliente).filter(function(g){return g.k!=='(sem cliente)';});
+  var min=L.reduce(function(s,l){return s+l[A.min];},0), custo=L.reduce(function(s,l){return s+l[A.custo];},0);
+  var abertos=D.prazos.filter(function(p){return p[1]!=='C'&&p[1]!=='S';});
+  var alertas=D.prazos.filter(function(p){var c=alertaClasse(p[9]); return c==='crit'||c==='warn';});
+  var dias=[], porDia={}; L.forEach(function(l){ porDia[l[A.data]]=(porDia[l[A.data]]||0)+1; });
+  for(var i=Math.max(F.dias,14)-1;i>=0;i--){ var d=diaISO(i); dias.push({x:d, xl:br(d).slice(0,5), y:porDia[d]||0, dica:br(d)+' · '+(porDia[d]||0)+' atividade(s)'}); }
+  var top=cli.sort(function(a,b){return b.n-a.n;}).slice(0,10).map(function(g){return {k:g.k,v:g.n};});
+  var areas=agrupa(L,A.area).sort(function(a,b){return b.n-a.n;}).map(function(g){return {k:g.k||'(sem área)',v:g.n};});
+  var h='<div class="grid kpis">'+
+    kpi('Atividades', num(L.length), 'arquivos criados ou editados')+
+    kpi('Clientes atendidos', num(cli.length), 'com ao menos 1 atividade', 'clientes')+
+    kpi('Horas registradas', horas(min), min? '' : 'só conta em arquivo Google')+
+    kpi('Custo do trabalho', brl(custo), custo? 'horas × custo da hora' : 'preencha a aba Equipe')+
+    kpi('Prazos com alerta', '<span style="color:var(--crit-ink)">'+num(alertas.length)+'</span>', num(abertos.length)+' em aberto na janela', 'prazos')+
+    kpi('Clientes parados', num(D.parados.length), 'há mais de 7 dias sem trabalho', 'parados')+
+  '</div><div class="grid dois" style="margin-top:14px">'+
+    '<div class="card" style="grid-column:1/-1"><h2>Atividades por dia</h2><p class="nota">'+(F.origem?'Só trabalho da equipe':'Tudo')+'. Passe o mouse nas barras.</p>'+colunas(dias,'no dia')+'</div>'+
+    '<div class="card"><h2>Clientes com mais atividade</h2><p class="nota">Clique no nome para ver o cliente.</p>'+hbarras(top,function(v){return num(v);},true)+'</div>'+
+    '<div class="card"><h2>Atividades por área</h2><p class="nota">Pasta de origem no Drive.</p>'+hbarras(areas,function(v){return num(v);})+'</div>'+
+    '<div class="card" style="grid-column:1/-1"><h2>Prazos que pedem atenção</h2><p class="nota">Prazo do EasyJur sem documento novo na pasta do cliente.</p>'+
+      tabela('alertas',[{t:'prazo'},{t:'cliente'},{t:'descrição'},{t:'situação'}], alertas.map(function(p){
+        return {v:[p[0],p[3],p[4],p[9]], h:[br(p[0]), esc(p[3]), '<div class="desc">'+esc(String(p[4]).slice(0,140))+'</div>', status(p[9])]}; }), {vazio:'Nenhum prazo em alerta.'})+'</div>'+
+  '</div>';
+  return h;
+}
+
+function prazos(){
+  return '<div class="card"><h2>Prazos da semana (EasyJur)</h2><p class="nota">De 7 dias atrás a 7 dias à frente. A coluna situação confere se a pasta do cliente ganhou documento depois que o prazo foi lançado.</p>'+
+    tabela('prazos',[{t:'prazo'},{t:'status'},{t:'cliente'},{t:'advogado'},{t:'descrição'},{t:'peça'},{t:'arquivos novos',num:1},{t:'situação'},{t:'pasta'}],
+      D.prazos.map(function(p){ var st={A:'em aberto',C:'concluído',S:'suspenso'}[p[1]]||p[1];
+        return {v:[p[0],st,p[3],p[2],p[4],p[5],Number(p[7])||0,p[9],''], h:[br(p[0]), '<span class="pill">'+esc(st)+'</span>', esc(p[3]), esc(p[2]),
+          '<div class="desc">'+esc(p[4])+(p[8]?'<div class="det" style="color:var(--muted);font-size:12px;margin-top:4px">'+esc(p[8])+'</div>':'')+'</div>',
+          esc(p[5]), num(p[7]), status(p[9]), linkPasta(p[10])]}; }))+'</div>';
+}
+
+function clientes(){
+  if(CLIENTE!==null) return clienteDetalhe(CLIENTE);
+  var L=noPeriodo(), g=agrupa(L,A.cliente);
+  var busca=norm((document.getElementById('busca')||{}).value||'');
+  if(busca) g=g.filter(function(x){return norm(x.k).indexOf(busca)>=0;});
+  if(!ORD.clientes) ORD.clientes={c:2,d:-1};
+  return '<div class="filtros"><input type="search" id="busca" placeholder="Buscar cliente pelo nome" value="'+esc((document.getElementById('busca')||{}).value||'')+'"></div>'+
+    '<div class="card"><h2>Clientes no período</h2><p class="nota">Clique numa linha para abrir o cliente. Clique no título da coluna para ordenar.</p>'+
+    tabela('clientes',[{t:'cliente'},{t:'área'},{t:'atividades',num:1},{t:'tempo',num:1},{t:'custo',num:1},{t:'última'}], g.map(function(x){
+      return {cli:x.k, v:[x.k,x.area,x.n,x.min,x.custo,x.ult], h:[esc(x.k), esc(x.area), num(x.n), horas(x.min), brl(x.custo), br(x.ult)]}; }))+'</div>';
+}
+
+function clienteDetalhe(nome){
+  var todos=D.arquivos.filter(function(l){return l[A.cliente]===nome;});
+  var L=todos.filter(function(l){return !F.origem||l[A.origem]===F.origem;});
+  var min=L.reduce(function(s,l){return s+l[A.min];},0), custo=L.reduce(function(s,l){return s+l[A.custo];},0);
+  var palavras=norm(nome.split(' - ')[0].split(' x ')[0]).split(/\s+/).filter(function(w){return w.length>2;}).slice(0,2);
+  var casa=function(t){ t=norm(t); return palavras.length && palavras.every(function(w){return t.indexOf(w)>=0;}); };
+  var pz=D.prazos.filter(function(p){return casa(p[3]);}), conv=D.conversas.filter(function(c){return casa(c[1]);});
+  var parado=D.parados.filter(function(p){return p[0]===nome;})[0];
+  var area=(todos[0]||[])[A.area]||'';
+  return '<button class="voltar" id="voltar">← todos os clientes</button>'+
+    '<div class="card" style="margin-bottom:14px"><h2 style="font-size:18px">'+esc(nome)+'</h2><p class="nota">'+esc(area)+(parado?' · <span class="st warn">parado há mais de 7 dias</span>':'')+'</p>'+
+    '<div class="grid kpis">'+kpi('Atividades (até 120 dias)',num(L.length))+kpi('Tempo',horas(min))+kpi('Custo',brl(custo))+kpi('Última atividade',br((L[0]||[])[A.data])||'—')+'</div></div>'+
+    '<div class="grid dois">'+
+    '<div class="card" style="grid-column:1/-1"><h2>Arquivos</h2><p class="nota">Mais recentes primeiro. Clique no nome para abrir no Drive.</p>'+
+      tabela('cli-arq',[{t:'dia'},{t:'pessoa'},{t:'ação'},{t:'horário'},{t:'tempo',num:1},{t:'arquivo'}], L.map(function(l){
+        return {v:[l[A.data],l[A.pessoa],l[A.acao],l[A.ini],l[A.min],l[A.arq]], h:[br(l[A.data]),esc(l[A.pessoa]),esc(l[A.acao]),esc(l[A.ini]+(l[A.fim]&&l[A.fim]!==l[A.ini]?'–'+l[A.fim]:'')),l[A.min]?horas(l[A.min]):'—',
+          l[A.link]?'<a href="'+esc(l[A.link])+'" target="_blank" rel="noopener">'+esc(l[A.arq])+'</a>':esc(l[A.arq])]}; }))+'</div>'+
+    '<div class="card"><h2>Prazos</h2><p class="nota">Prazos da janela com nome parecido no EasyJur.</p>'+
+      tabela('cli-pz',[{t:'prazo'},{t:'descrição'},{t:'situação'}], pz.map(function(p){return {v:[p[0],p[4],p[9]],h:[br(p[0]),'<div class="desc">'+esc(String(p[4]).slice(0,160))+'</div>',status(p[9])]};}),{vazio:'Nenhum prazo nesta semana.'})+'</div>'+
+    '<div class="card"><h2>Conversas no WhatsApp</h2><p class="nota">Últimos 60 dias, pelo nome do contato.</p>'+
+      tabela('cli-wa',[{t:'dia'},{t:'contato'},{t:'mensagens',num:1},{t:'respondeu'}], conv.map(function(c){return {v:[c[0],c[1],c[3],c[5]],h:[br(c[0]),esc(c[1]),num(c[3]),esc(c[5])]};}),{vazio:'Nenhuma conversa encontrada pelo nome.'})+'</div>'+
+    '</div>';
+}
+
+function parados(){
+  if(!ORD.parados) ORD.parados={c:4,d:-1};
+  return '<div class="card"><h2>Clientes com processo ativo e sem trabalho da equipe há mais de 7 dias</h2><p class="nota">'+num(D.parados.length)+' cliente(s). Ordene pela coluna que quiser.</p>'+
+    tabela('parados',[{t:'cliente'},{t:'área'},{t:'último trabalho'},{t:'dias parado',num:1},{t:'processos',num:1},{t:'última conversa'},{t:'pasta'}], D.parados.map(function(p){
+      var dias=Number(p[3])||0;
+      return {cli:p[0], v:[p[0],p[1],p[2],dias,Number(p[4])||0,p[5],''], h:[esc(p[0]),esc(p[1]),esc(/^\d{4}-/.test(p[2])?br(p[2]):p[2]),dias?num(dias):'+30',num(p[4]),br(p[5])||'—',linkPasta(p[6])]}; }))+'</div>';
+}
+
+function equipe(){
+  var L=noPeriodo(), pes=agrupa(L,A.pessoa).sort(function(a,b){return b.n-a.n;});
+  var dia=(document.getElementById('dia')||{}).value||hojeISO();
+  var doDia=D.arquivos.filter(function(l){return l[A.data]===dia && l[A.origem]==='equipe';});
+  var dias=[]; for(var i=0;i<30;i++) dias.push(diaISO(i));
+  var so1=pes.length<=1 && pes.length && /escrit/i.test(pes[0].k);
+  return (so1?'<div class="aviso"><b>Tudo aparece como “conta do escritório”.</b> Todos usam o mesmo login do Google, e as peças são feitas em Word. Para o painel mostrar quem fez cada arquivo e quanto tempo levou, cada pessoa precisa entrar com o próprio login e fazer as peças no Google Docs. Depois, é só cadastrar o e-mail e o custo da hora de cada um na aba Equipe da planilha.</div>':'')+
+    '<div class="grid dois">'+
+    '<div class="card"><h2>Por pessoa no período</h2><p class="nota">Atividades, tempo e custo.</p>'+
+      tabela('pessoas',[{t:'pessoa'},{t:'atividades',num:1},{t:'tempo',num:1},{t:'custo',num:1}], pes.map(function(p){return {v:[p.k,p.n,p.min,p.custo],h:[esc(p.k),num(p.n),horas(p.min),brl(p.custo)]};}))+'</div>'+
+    '<div class="card"><h2>Custo da hora (aba Equipe)</h2><p class="nota">Para mudar, edite a aba Equipe da <a href="'+esc(D.planilha)+'" target="_blank" rel="noopener">planilha</a>.</p>'+
+      tabela('custo-hora',[{t:'pessoa'},{t:'função'},{t:'custo da hora',num:1}], D.equipe.map(function(e){return {v:[e[0],e[2],e[1]],h:[esc(e[0]),esc(e[2]),e[1]?brl(e[1]):'<span style="color:var(--crit-ink)">não informado</span>']};}))+'</div>'+
+    '<div class="card" style="grid-column:1/-1"><h2>Arquivos de cada pessoa no dia</h2><p class="nota">Escolha o dia. '+num(doDia.length)+' arquivo(s) de trabalho da equipe.</p>'+
+      '<div class="filtros"><select id="dia">'+dias.map(function(d){return '<option value="'+d+'"'+(d===dia?' selected':'')+'>'+br(d)+'</option>';}).join('')+'</select></div>'+
+      tabela('dia-arq',[{t:'pessoa'},{t:'horário'},{t:'ação'},{t:'cliente'},{t:'arquivo'},{t:'tempo',num:1}], doDia.map(function(l){
+        return {v:[l[A.pessoa],l[A.ini],l[A.acao],l[A.cliente],l[A.arq],l[A.min]], h:[esc(l[A.pessoa]),esc(l[A.ini]),esc(l[A.acao]),esc(l[A.cliente]),
+          l[A.link]?'<a href="'+esc(l[A.link])+'" target="_blank" rel="noopener">'+esc(l[A.arq])+'</a>':esc(l[A.arq]), l[A.min]?horas(l[A.min]):'—']}; }),{vazio:'Nenhum arquivo neste dia.'})+'</div>'+
+    '</div>';
+}
+
+function whats(){
+  var de=diaISO(F.dias-1), C=D.conversas.filter(function(c){return c[0]>=de;});
+  var semResp=C.filter(function(c){return /sim|true/i.test(String(c[4]));}).length;
+  var tipos=agrupa(C.map(function(c){var l=[];l[A.cliente]=c[2]||'outro';l[A.data]=c[0];l[A.min]=0;l[A.custo]=0;return l;}),A.cliente).sort(function(a,b){return b.n-a.n;}).map(function(g){return {k:g.k,v:g.n};});
+  var porDia={}, dias=[]; C.forEach(function(c){porDia[c[0]]=(porDia[c[0]]||0)+1;});
+  for(var i=Math.max(F.dias,14)-1;i>=0;i--){ var d=diaISO(i); dias.push({xl:br(d).slice(0,5), y:porDia[d]||0, dica:br(d)+' · '+(porDia[d]||0)+' conversa(s)'}); }
+  return '<div class="grid kpis">'+kpi('Conversas',num(C.length),'no período')+kpi('Mensagens',num(C.reduce(function(s,c){return s+c[3];},0)),'recebidas e enviadas')+kpi('Sem resposta',num(semResp),'conversas do dia sem retorno')+'</div>'+
+    '<div class="grid dois" style="margin-top:14px"><div class="card"><h2>Conversas por dia</h2><p class="nota">Base: planilha das conversas do dia (Za.Ia), últimos 60 dias.</p>'+colunas(dias,'no dia')+'</div>'+
+    '<div class="card"><h2>Por tipo de contato</h2><p class="nota">Cliente ativo, lead ou outro.</p>'+hbarras(tipos,function(v){return num(v);})+'</div>'+
+    '<div class="card" style="grid-column:1/-1"><h2>Conversas</h2><p class="nota">Mais recentes primeiro.</p>'+
+      tabela('conv',[{t:'dia'},{t:'contato'},{t:'tipo'},{t:'mensagens',num:1},{t:'sem resposta'},{t:'respondeu'},{t:'1ª msg'},{t:'última'}], C.map(function(c){
+        return {v:c, h:[br(c[0]),esc(c[1]),'<span class="pill">'+esc(c[2])+'</span>',num(c[3]),esc(c[4]),esc(c[5]),esc(c[6]),esc(c[7])]}; }))+'</div></div>';
+}
+
+var SECOES={geral:geral, prazos:prazos, clientes:clientes, parados:parados, equipe:equipe, whats:whats};
+function desenhar(){
+  document.querySelectorAll('.secao').forEach(function(s){s.classList.toggle('on', s.id==='s-'+SEC);});
+  document.querySelectorAll('#menu button').forEach(function(b){b.classList.toggle('on', b.dataset.s===SEC);});
+  document.getElementById('filtros').style.display = (SEC==='prazos'||SEC==='parados')?'none':'flex';
+  var foco=document.activeElement&&document.activeElement.id, pos=foco==='busca'?document.activeElement.selectionStart:null;
+  document.getElementById('s-'+SEC).innerHTML=SECOES[SEC]();
+  if(foco==='busca'){ var b=document.getElementById('busca'); b.focus(); if(pos!=null) b.setSelectionRange(pos,pos); }
+}
+function ir(s, cli){ SEC=s; CLIENTE=cli===undefined?null:cli; desenhar(); window.scrollTo(0,0); }
+
+document.addEventListener('click', function(e){
+  var t=e.target.closest('[data-s]'); if(t&&t.closest('#menu')) return ir(t.dataset.s);
+  t=e.target.closest('#periodo button'); if(t){ F.dias=Number(t.dataset.d); document.querySelectorAll('#periodo button').forEach(function(b){b.classList.toggle('on',b===t);}); return desenhar(); }
+  t=e.target.closest('[data-ir]'); if(t) return ir(t.dataset.ir);
+  if(e.target.id==='voltar') return ir('clientes');
+  if(e.target.closest('a')) return;
+  t=e.target.closest('[data-cli]'); if(t){ var nome=t.dataset.cli; if(D.arquivos.some(function(l){return l[A.cliente]===nome;})) return ir('clientes', nome); return; }
+  t=e.target.closest('th[data-c]'); if(t){ var id=t.closest('table').dataset.tab, c=Number(t.dataset.c), o=ORD[id]; ORD[id]={c:c,d:o&&o.c===c?-o.d:1}; return desenhar(); }
+});
+document.addEventListener('change', function(e){ if(e.target.id==='origem'){F.origem=e.target.value; desenhar();} if(e.target.id==='dia') desenhar(); });
+document.addEventListener('input', function(e){ if(e.target.id==='busca') desenhar(); });
+var dica=document.getElementById('dica');
+document.addEventListener('mousemove', function(e){
+  var t=e.target.closest('[data-dica]'); if(!t){ dica.style.opacity=0; return; }
+  dica.textContent=t.dataset.dica; dica.style.opacity=1;
+  var x=Math.min(e.clientX+12, window.innerWidth-dica.offsetWidth-8); dica.style.left=x+'px'; dica.style.top=(e.clientY-34)+'px';
+});
+
+function iniciar(json){
+  D=JSON.parse(json);
+  if(D.semAcesso){ document.getElementById('carregando').innerHTML='Sua conta <b>'+esc(D.usuario||'')+'</b> não tem acesso à planilha do painel. Peça ao Dr. Lucas para compartilhar a planilha “Painel de Gestão” com este e-mail.'; return; }
+  D.arquivos.sort(function(a,b){ return (b[A.data]+b[A.ini]).localeCompare(a[A.data]+a[A.ini]); });
+  D.conversas.sort(function(a,b){ return String(b[0]+b[7]).localeCompare(String(a[0]+a[7])); });
+  document.getElementById('topo').innerHTML='Atualizado em '+esc(br(D.atualizado)+' '+String(D.atualizado).slice(11,16))+'<br>'+esc(D.usuario||'')+' · <a style="color:#fff;text-decoration:underline" href="'+esc(D.planilha)+'" target="_blank" rel="noopener">planilha</a>';
+  var al=D.prazos.filter(function(p){var c=alertaClasse(p[9]); return c==='crit';}).length;
+  if(al) document.querySelector('#menu [data-s=prazos]').insertAdjacentHTML('beforeend','<span class="badge">'+al+'</span>');
+  document.getElementById('carregando').style.display='none'; document.getElementById('app').style.display='block';
+  desenhar();
+}
+function falhou(e){ document.getElementById('carregando').textContent='Não consegui carregar os dados: '+(e&&e.message||e); }
+google.script.run.withSuccessHandler(iniciar).withFailureHandler(falhou).dados();
+</script>
+</body>
+</html>
