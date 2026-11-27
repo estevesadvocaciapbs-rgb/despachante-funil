@@ -2,9 +2,11 @@
  * Painel de Gestão — site (27/11/2026) — Esteves Advocacia.
  *
  * Projeto Apps Script PRÓPRIO ("Painel de Gestão - site"), separado da Ponte Planilha, publicado como App da Web:
- *   Executar como: "Usuário que acessa o app"  |  Quem pode acessar: "Qualquer pessoa com Conta do Google".
- * Assim só abre os dados quem tem acesso à planilha do painel (o Google confere o login de cada um); quem não tem
- * vê a tela de "sem acesso". A planilha continua sendo o banco de dados (montada pelo painel.gs, 7h e 20h15).
+ *   Executar como: "Eu" (conta do escritório)  |  Quem pode acessar: "Qualquer pessoa".
+ * A porta é a SENHA DO PAINEL, que o próprio Dr. Lucas cadastra em Configurações do projeto > Propriedades do
+ * script > SENHA_PAINEL (ninguém mais vê). O login do Google por pessoa não serve aqui: com duas contas no mesmo
+ * Chrome o Google não abre o app. Errou 10 vezes, bloqueia 15 minutos. Trocar a senha desconecta todos os aparelhos.
+ * A planilha continua sendo o banco de dados (montada pelo painel.gs, 7h e 20h15).
  *
  * Arquivos no editor: Código.gs (este) e index.html (painel_site.html no GitHub).
  * Repositório PÚBLICO: aqui só o código; o id da planilha fica vazio no GitHub e é colado no editor.
@@ -32,11 +34,30 @@ function sAba(pl, nome) {
   return v;
 }
 
+function sSenha() { return PropertiesService.getScriptProperties().getProperty('SENHA_PAINEL') || ''; }
+function sFicha(senha) {  // o aparelho guarda só esta ficha, nunca a senha
+  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
+    'painel-gestao|' + senha, Utilities.Charset.UTF_8));
+}
+
+/** Confere a senha digitada e devolve a ficha que o navegador guarda. */
+function entrar(senha) {
+  var cache = CacheService.getScriptCache(), tent = Number(cache.get('tentativas') || 0), certa = sSenha();
+  if (!certa) return JSON.stringify({ erro: 'A senha do painel ainda não foi cadastrada no Google.' });
+  if (tent >= 10) return JSON.stringify({ erro: 'Muitas tentativas erradas. Espere 15 minutos.' });
+  if (String(senha) !== certa) {
+    cache.put('tentativas', String(tent + 1), 900);
+    Utilities.sleep(700);
+    return JSON.stringify({ erro: 'Senha incorreta.' });
+  }
+  return JSON.stringify({ ficha: sFicha(certa) });
+}
+
 /** Tudo que a página precisa, numa chamada só (a página filtra e soma no navegador). */
-function dados() {
-  var pl;
-  try { pl = SpreadsheetApp.openById(SITE_PLANILHA); }
-  catch (e) { return JSON.stringify({ semAcesso: true, usuario: Session.getActiveUser().getEmail() }); }
+function dados(ficha) {
+  var certa = sSenha();
+  if (!certa || ficha !== sFicha(certa)) return JSON.stringify({ sair: true });
+  var pl = SpreadsheetApp.openById(SITE_PLANILHA);
   var corte = Utilities.formatDate(new Date(Date.now() - SITE_DIAS * 864e5), SITE_FUSO, 'yyyy-MM-dd');
   var gravado = '';
   // Arquivos: data, cliente, área, origem, pessoa, ação, início, fim, minutos, custo, arquivo, tipo, link
@@ -63,6 +84,6 @@ function dados() {
   return JSON.stringify({
     arquivos: arquivos, prazos: prazos, parados: parados, conversas: conversas, equipe: equipe,
     clientesAtivos: sAba(pl, '_clientes_easyjur').length, atualizado: gravado,
-    planilha: pl.getUrl(), usuario: Session.getActiveUser().getEmail()
+    planilha: pl.getUrl()
   });
 }

@@ -82,6 +82,10 @@ input[type=search]{min-width:240px}
 .vazio{color:var(--muted);font-size:13px;padding:14px 0}
 #dica{position:fixed;pointer-events:none;background:var(--text);color:var(--surface);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:20;white-space:nowrap}
 #carregando{padding:80px 20px;text-align:center;color:var(--text-2)}
+#login{max-width:380px;margin:60px auto;flex-direction:column;gap:10px}
+#login input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+#login button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:10px;background:var(--s1);color:#fff;cursor:pointer}
+#login button:disabled{opacity:.6}
 .voltar{border:0;background:none;color:var(--s1);font:inherit;cursor:pointer;padding:0;margin-bottom:10px}
 .secao{display:none} .secao.on{display:block}
 @media (max-width:640px){ main{padding:12px} .dois{grid-template-columns:1fr} input[type=search]{min-width:0;width:100%} header .dir{margin-left:0;text-align:left} .kpi .val{font-size:23px} }
@@ -92,7 +96,7 @@ input[type=search]{min-width:240px}
   <div><h1>Painel de Gestão</h1><div class="sub">Esteves Advocacia · produtividade, prazos e custos</div></div>
   <div class="dir" id="topo"></div>
 </header>
-<nav id="menu">
+<nav id="menu" style="display:none">
   <button data-s="geral" class="on">Visão geral</button>
   <button data-s="prazos">Prazos</button>
   <button data-s="clientes">Clientes</button>
@@ -102,6 +106,14 @@ input[type=search]{min-width:240px}
 </nav>
 <main>
   <div id="carregando">Carregando os dados do escritório…</div>
+  <form id="login" style="display:none" class="card" autocomplete="on">
+    <h2 style="font-size:17px">Entrar no painel</h2>
+    <p class="nota">Digite a senha do painel. Ela fica guardada só neste aparelho.</p>
+    <input type="text" name="username" value="painel" autocomplete="username" style="display:none">
+    <input type="password" id="senha" autocomplete="current-password" placeholder="Senha do painel" required>
+    <button type="submit" id="btEntrar">Entrar</button>
+    <p id="loginErro" class="nota" style="color:var(--crit-ink);margin-top:10px"></p>
+  </form>
   <div id="app" style="display:none">
     <div class="filtros" id="filtros">
       <label>Período</label>
@@ -323,17 +335,30 @@ document.addEventListener('mousemove', function(e){
 
 function iniciar(json){
   D=JSON.parse(json);
-  if(D.semAcesso){ document.getElementById('carregando').innerHTML='Sua conta <b>'+esc(D.usuario||'')+'</b> não tem acesso à planilha do painel. Peça ao Dr. Lucas para compartilhar a planilha “Painel de Gestão” com este e-mail.'; return; }
+  if(D.sair){ try{localStorage.removeItem('painelFicha');}catch(e){} return mostrarLogin(''); }
   D.arquivos.sort(function(a,b){ return (b[A.data]+b[A.ini]).localeCompare(a[A.data]+a[A.ini]); });
   D.conversas.sort(function(a,b){ return String(b[0]+b[7]).localeCompare(String(a[0]+a[7])); });
-  document.getElementById('topo').innerHTML='Atualizado em '+esc(br(D.atualizado)+' '+String(D.atualizado).slice(11,16))+'<br>'+esc(D.usuario||'')+' · <a style="color:#fff;text-decoration:underline" href="'+esc(D.planilha)+'" target="_blank" rel="noopener">planilha</a>';
+  document.getElementById('topo').innerHTML='Atualizado em '+esc(br(D.atualizado)+' '+String(D.atualizado).slice(11,16))+'<br><a style="color:#fff;text-decoration:underline" href="'+esc(D.planilha)+'" target="_blank" rel="noopener">planilha</a> · <a style="color:#fff;text-decoration:underline" href="#" id="sair">sair</a>';
   var al=D.prazos.filter(function(p){var c=alertaClasse(p[9]); return c==='crit';}).length;
   if(al) document.querySelector('#menu [data-s=prazos]').insertAdjacentHTML('beforeend','<span class="badge">'+al+'</span>');
-  document.getElementById('carregando').style.display='none'; document.getElementById('app').style.display='block';
+  document.getElementById('carregando').style.display='none'; document.getElementById('app').style.display='block'; document.getElementById('menu').style.display='flex';
   desenhar();
 }
-function falhou(e){ document.getElementById('carregando').textContent='Não consegui carregar os dados: '+(e&&e.message||e); }
-google.script.run.withSuccessHandler(iniciar).withFailureHandler(falhou).dados();
+function falhou(e){ document.getElementById('carregando').style.display='block'; document.getElementById('carregando').textContent='Não consegui carregar os dados: '+(e&&e.message||e); }
+function ficha(){ try{ return localStorage.getItem('painelFicha')||''; }catch(e){ return ''; } }
+function carregar(){ document.getElementById('login').style.display='none'; document.getElementById('carregando').style.display='block';
+  google.script.run.withSuccessHandler(iniciar).withFailureHandler(falhou).dados(ficha()); }
+function mostrarLogin(msg){ document.getElementById('carregando').style.display='none'; document.getElementById('app').style.display='none';
+  document.getElementById('login').style.display='flex'; document.getElementById('loginErro').textContent=msg||''; document.getElementById('senha').value=''; document.getElementById('senha').focus(); }
+document.getElementById('login').addEventListener('submit', function(e){
+  e.preventDefault(); var bt=document.getElementById('btEntrar'); bt.disabled=true; bt.textContent='Conferindo…';
+  google.script.run.withSuccessHandler(function(j){ var r=JSON.parse(j); bt.disabled=false; bt.textContent='Entrar';
+      if(r.erro) return mostrarLogin(r.erro); try{localStorage.setItem('painelFicha', r.ficha);}catch(x){} document.getElementById('senha').value=''; carregar(); })
+    .withFailureHandler(function(x){ bt.disabled=false; bt.textContent='Entrar'; mostrarLogin('Falha: '+(x&&x.message||x)); })
+    .entrar(document.getElementById('senha').value);
+});
+document.addEventListener('click', function(e){ if(e.target.id==='sair'){ e.preventDefault(); try{localStorage.removeItem('painelFicha');}catch(x){} location.reload(); } });
+if(ficha()) carregar(); else mostrarLogin('');
 </script>
 </body>
 </html>
