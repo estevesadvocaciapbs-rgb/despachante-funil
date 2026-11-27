@@ -1,22 +1,23 @@
 /**
  * Ponte Planilha - conversas do dia (27/11/2026) — Esteves Advocacia.
  *
- * Script LIGADO à planilha "Conversas WhatsApp – banco diário" (Extensões › Apps Script dentro da planilha).
- * Só mexe nesta planilha (permissão spreadsheets.currentonly). Publicado como App da Web: executar como eu,
- * acesso "qualquer pessoa"; sem a chave certa ele não faz nada.
+ * Projeto do Apps Script na conta do escritório que grava na planilha "Conversas WhatsApp – banco diário"
+ * (id em PLANILHA_ID; na cópia do GitHub fica vazio). Projeto separado, e não ligado à planilha, porque o
+ * Google não abre o editor ligado à planilha quando há duas contas no Chrome. Só abre a planilha do PLANILHA_ID.
+ * Publicado como App da Web: executar como eu, acesso "qualquer pessoa"; sem a chave certa ele não faz nada.
  *
  * O despachante (conversas_dia.py) manda, todo dia às 19h, uma linha por conversa do WhatsApp com SÓ números e
  * horários (nunca o texto das mensagens). A gravação é por dia: regravar um dia troca as linhas dele, sem duplicar.
  *
- * Segurança: a chave fica nas Propriedades do script (função configurar), nunca no código. Na cópia do GitHub
- * não há chave nem endereço.
+ * Segurança: a chave fica nas Propriedades do script (função configurar), nunca no código.
  */
+var PLANILHA_ID = '';
 var ABA_DADOS = 'Conversas';
 var ABA_CLIENTES = '_clientes';
 var ABA_RESUMO = 'Resumo';
 var FUSO = 'America/Belem';
 
-/** Rode UMA vez no editor: cria as abas, pede a autorização e mostra a chave para o segredo do GitHub. */
+/** Rode UMA vez no editor: cria as abas, pede a autorização e mostra a chave (GOOGLE_PLANILHA_CHAVE). */
 function configurar() {
   var props = PropertiesService.getScriptProperties();
   var chave = props.getProperty('CHAVE');
@@ -27,7 +28,12 @@ function configurar() {
   aba(ABA_DADOS);
   aba(ABA_CLIENTES).hideSheet();
   montarResumo();
-  Logger.log('Copie esta chave para o segredo GOOGLE_PLANILHA_CHAVE do GitHub: ' + chave);
+  Logger.log('Pronto. As abas foram criadas e a chave foi gerada. Para ver a chave, rode a função mostrarChave.');
+}
+
+/** Mostra a chave (GOOGLE_PLANILHA_CHAVE) no registro de execução, para copiar. */
+function mostrarChave() {
+  Logger.log(PropertiesService.getScriptProperties().getProperty('CHAVE'));
 }
 
 function doPost(e) {
@@ -56,7 +62,7 @@ function saida(obj) {
 }
 
 function aba(nome) {
-  var pl = SpreadsheetApp.getActiveSpreadsheet();
+  var pl = SpreadsheetApp.openById(PLANILHA_ID);
   return pl.getSheetByName(nome) || pl.insertSheet(nome);
 }
 

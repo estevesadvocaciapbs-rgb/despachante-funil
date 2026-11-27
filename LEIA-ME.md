@@ -280,8 +280,8 @@ Não usa IA e só usa as ferramentas oficiais da Za.Ia (`listar_conversas` e `le
   que chegou depois das 19h. Regravar um dia troca as linhas dele, sem duplicar.
 - **Cota do EasyJur:** o telefone de cada cliente fica guardado na aba oculta `_clientes` da própria planilha, e
   só pessoa nova vai ao `get_pessoa` (no máximo 60 por execução).
-- **Ponte:** `ponte_planilha.gs`, um Apps Script ligado à planilha, que só mexe nela. Segredos
-  `GOOGLE_PLANILHA_URL` e `GOOGLE_PLANILHA_CHAVE` (a chave sai da função `configurar()` do script).
+- **Ponte:** `ponte_planilha.gs`, um projeto do Apps Script na conta do escritório que só abre essa planilha (id em `PLANILHA_ID`, vazio na cópia do GitHub). Segredos
+  `GOOGLE_PLANILHA_URL` e `GOOGLE_PLANILHA_CHAVE` (a chave aparece rodando a função `mostrarChave()` no editor do script).
 - **Refazer ou preencher dias passados:** Actions › "Conversas do dia" › Run workflow, com as datas
   (AAAA-MM-DD). "Só simular" lê tudo e mostra só as contagens, sem gravar. Um commit em `conversas-dia-agora.txt`
   roda na hora.
