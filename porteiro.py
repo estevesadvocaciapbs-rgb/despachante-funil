@@ -308,10 +308,32 @@ def comando_em_alta(texto):
     return "PEDIDO"
 
 
+JANELA_EM_ALTA = timedelta(hours=3)  # resposta mandada na troca de plantão (ou pouco antes) não se perde
+
+
+def _ultima_em_alta():
+    """Hora da última resposta EA já gravada (lida uma vez por plantão do em_alta.json)."""
+    if _estado.get("ea_ultima") is None:
+        import base64
+        try:
+            r = json.loads(base64.b64decode(_github("GET", f"contents/{ARQUIVO_EM_ALTA}?ref={RAMO_SINAL}")["content"]))
+            _estado["ea_ultima"] = ler_iso(r["resposta_em"])
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                return None  # não deu para ler: não grava nada nesta volta (evita repetir resposta antiga)
+            _estado["ea_ultima"] = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return _estado["ea_ultima"]
+
+
 def olhar_em_alta(zaia, msgs, agora):
-    """msgs: mensagens novas do privado do Dr. Lucas. Grava o sinal e confirma o recebimento a ele."""
-    for m in msgs:
+    """msgs: mensagens do privado do Dr. Lucas (das últimas 3 h). Grava o sinal e confirma o recebimento a ele."""
+    for m in sorted(msgs, key=lambda m: m["createdAt"]):
         if m.get("sender") != "CONTACT":
+            continue
+        ultima = _ultima_em_alta()
+        if ultima is None or ler_iso(m["createdAt"]) <= ultima:
             continue
         cmd = comando_em_alta(m.get("content"))
         if not cmd:
@@ -319,6 +341,7 @@ def olhar_em_alta(zaia, msgs, agora):
         conteudo = json.dumps({"resposta_em": m["createdAt"], "comando": cmd, "msg_id": m.get("id")}) + "\n"
         if not gravar_no_ramo(ARQUIVO_EM_ALTA, conteudo, f"em alta: resposta {cmd}"):
             continue
+        _estado["ea_ultima"] = ler_iso(m["createdAt"])
         _log(f"em alta: resposta {cmd} gravada")
         try:
             zaia.chamar("enviar_mensagem", assinatura="ia", numero=LUCAS_TEL,
@@ -600,13 +623,16 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
             if msgs is None:
                 conv = (zaia.chamar("buscar_conversa_por_telefone", telefone=tel) or {}).get("conversa") or {}
                 ultima = conv.get("lastMessageAt")
-                if not ultima or ler_iso(ultima) <= (_estado["visto"].get("p" + tel) or _estado["desde"]):
+                base = _estado["visto"].get("p" + tel) or (
+                    _estado["desde"] - JANELA_EM_ALTA if tel == LUCAS_TEL else _estado["desde"])
+                if not ultima or ler_iso(ultima) <= base:
                     continue
                 msgs = (zaia.chamar("ler_conversa", conversaId=conv["id"]) or {}).get("messages", [])
+            if tel == LUCAS_TEL:  # olha 3 h para trás: resposta EA mandada na troca de plantão não se perde
+                olhar_em_alta(zaia, [m for m in msgs if ler_iso(m["createdAt"]) > agora - JANELA_EM_ALTA], agora)
             recentes = novos(msgs, _estado["desde"], "p" + tel)
             if tel == LUCAS_TEL and recentes:
                 olhar_autocorrecao(recentes, agora)
-                olhar_em_alta(zaia, recentes, agora)
             if any(m.get("sender") == "CONTACT" and pedido_financeiro(m.get("content")) for m in recentes):
                 _estado["fin_pendente"] = True  # pedido de financeiro no privado: acorda a rotina financeira
             achou += sum(1 for m in recentes if pedido_no_privado(m, quem))

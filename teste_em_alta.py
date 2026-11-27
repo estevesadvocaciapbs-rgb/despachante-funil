@@ -25,7 +25,10 @@ class Zaia:
 
 msgs = [{"sender": "USER", "content": "Responda EA SIM", "createdAt": "2026-11-27T20:00:00Z", "id": 1},
         {"sender": "CONTACT", "content": "EA sim agenda", "createdAt": "2026-11-27T20:05:00Z", "id": 2}]
+from datetime import datetime, timezone
+p._estado["ea_ultima"] = datetime(2000, 1, 1, tzinfo=timezone.utc)
 p.olhar_em_alta(Zaia(), msgs, None)
+p.olhar_em_alta(Zaia(), msgs, None)  # a mesma resposta lida de novo (outra volta ou plantão) não repete
 assert len(gravados) == 1 and '"AGENDA"' in gravados[0][1] and "em_alta.json" == gravados[0][0], gravados
 assert len(enviados) == 1 and enviados[0][1]["numero"] == p.LUCAS_TEL, enviados
 assert not p.pedido_no_privado(msgs[1], "lucas"), "EA não pode acordar o Secretário"
