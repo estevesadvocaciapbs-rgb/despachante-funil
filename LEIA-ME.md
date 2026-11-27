@@ -402,3 +402,10 @@ que acontece nos contatos da Za.Ia; o auditor manda no máximo 4 informes por di
 - Dr. Lucas: seg–qui, 10h30–16h30.
 - Ninguém na sexta, fim de semana ou feriado do escritório. Mínimo de 3 horas
   de antecedência. Só compromissos reais ocupam; VIAGEM sem hora bloqueia o dia.
+
+## Em alta da sexta (27/11/2026)
+A tarefa `em-alta-da-sexta` (computador do escritório, segunda 8h20) pergunta no privado do Dr. Lucas se pode
+produzir o post de sexta. Ele responde começando por **EA** (EA SIM, EA SIM AGENDA, EA RESERVA, EA GRAVO,
+EA AJUSTE ..., EA NÃO). O porteiro grava só o código e a hora em `em_alta.json` (ramo `sinal`), confirma o
+recebimento a ele e não acorda o Secretário. A sessão do computador espera esse arquivo e lê o texto pela Za.Ia.
+Teste: `python teste_em_alta.py`.

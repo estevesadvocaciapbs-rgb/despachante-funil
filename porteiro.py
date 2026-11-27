@@ -140,6 +140,8 @@ def pedido_no_privado(m, quem):
         return True  # comprovante, documento ou áudio transcrito: precisa de IA
     if pedido_financeiro(m.get("content")):
         return False  # acorda só a rotina financeira (rodada)
+    if quem == "lucas" and comando_em_alta(m.get("content")):
+        return False  # resposta ao Em alta da sexta: vai para em_alta.json (rodada), não acorda o Secretário
     return not resolvido_pelo_codigo(m.get("content"), quem)
 
 
@@ -274,6 +276,56 @@ def olhar_autocorrecao(msgs, agora):
     for t in textos:
         if MARCA_AUTOCORRECAO in t and MARCA_REGRAS in t and guardar_regras(regras_da_mensagem(t), agora):
             _log("regras novas do auditor gravadas")
+
+
+# ---------------------------------------------------------------- Em alta da sexta (pedido do Dr. Lucas, 27/11/2026)
+# A tarefa "em-alta-da-sexta" (no computador do escritório, segunda 8h20) pesquisa o tema e pergunta no privado
+# dele se pode produzir. Ele responde começando por "EA" (EA SIM, EA SIM AGENDA, EA RESERVA, EA GRAVO, EA AJUSTE
+# ..., EA NÃO). O porteiro grava só o código da resposta e a hora em em_alta.json (ramo "sinal"); a sessão do
+# computador fica esperando esse arquivo e lê o texto inteiro pela Za.Ia. Nenhum texto dele vai ao repositório.
+ARQUIVO_EM_ALTA = "em_alta.json"
+RE_EM_ALTA = re.compile(r"^\s*\*?ea\b[\s:.,;!*-]*(.*)$", re.S)
+DESCRICAO_EM_ALTA = {
+    "AGENDA": "produzir e agendar no Instagram", "SIM": "produzir e mandar a prévia aqui",
+    "RESERVA": "trocar pelo tema reserva", "GRAVO": "mandar o roteiro para você gravar",
+    "AJUSTE": "ajustar o post", "NAO": "sem post nesta sexta", "PEDIDO": "ler o seu pedido",
+}
+
+
+def comando_em_alta(texto):
+    """Código da resposta do Dr. Lucas ao Em alta, ou None se a mensagem não começa com EA."""
+    m = RE_EM_ALTA.match(norm(_sem_assinatura(texto)))
+    if not m:
+        return None
+    resto = m.group(1)
+    if re.match(r"(nao|n)\b", resto):
+        return "NAO"
+    for padrao, cmd in ((r"\bagend|\bprogram", "AGENDA"), (r"\breserva|\boutro tema", "RESERVA"),
+                        (r"\bgrav", "GRAVO"), (r"\bajust|\bmud|\btroc|\bcorrig", "AJUSTE"),
+                        (r"\bsim\b|\bok\b|\bpode\b|\bautoriz|\baprov", "SIM")):
+        if re.search(padrao, resto):
+            return cmd
+    return "PEDIDO"
+
+
+def olhar_em_alta(zaia, msgs, agora):
+    """msgs: mensagens novas do privado do Dr. Lucas. Grava o sinal e confirma o recebimento a ele."""
+    for m in msgs:
+        if m.get("sender") != "CONTACT":
+            continue
+        cmd = comando_em_alta(m.get("content"))
+        if not cmd:
+            continue
+        conteudo = json.dumps({"resposta_em": m["createdAt"], "comando": cmd, "msg_id": m.get("id")}) + "\n"
+        if not gravar_no_ramo(ARQUIVO_EM_ALTA, conteudo, f"em alta: resposta {cmd}"):
+            continue
+        _log(f"em alta: resposta {cmd} gravada")
+        try:
+            zaia.chamar("enviar_mensagem", assinatura="ia", numero=LUCAS_TEL,
+                        texto=f"🤖 Recebido: {DESCRICAO_EM_ALTA[cmd]}. O computador do escritório assume a partir "
+                              "daqui. Se ele estiver desligado, começa assim que for ligado.")
+        except Exception as erro:
+            _log(f"em alta: confirmação não enviada: {type(erro).__name__}")
 
 
 RE_DOCUMENTOS_GRUPO = re.compile(r"^\s*\*?documentos\b|documentacao (encerrada|fechada|completa)|documentos completos")
@@ -554,6 +606,7 @@ def rodada(zaia, agora=None, contagem=None, conversas_lidas=None):
             recentes = novos(msgs, _estado["desde"], "p" + tel)
             if tel == LUCAS_TEL and recentes:
                 olhar_autocorrecao(recentes, agora)
+                olhar_em_alta(zaia, recentes, agora)
             if any(m.get("sender") == "CONTACT" and pedido_financeiro(m.get("content")) for m in recentes):
                 _estado["fin_pendente"] = True  # pedido de financeiro no privado: acorda a rotina financeira
             achou += sum(1 for m in recentes if pedido_no_privado(m, quem))
