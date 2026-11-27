@@ -311,7 +311,7 @@ Sem IA, só código. Duas partes:
   `SENHA_PAINEL` nas Propriedades do script (só o Dr. Lucas cadastra; ninguém escreve a senha em chat ou no
   repositório). O aparelho guarda só uma ficha (hash); 10 erros bloqueiam 15 min; trocar a senha desconecta todos.
   O `/exec` do Google falha em Chrome com duas contas logadas ("Não foi possível abrir o arquivo"), por isso a
-  página também roda fora do Google e chama o `doPost` por fetch sem cookies (variável `API` no html). No editor:
+  página principal fica em https://estevesadvocaciapbs-rgb.github.io/painel-escritorio/ (repo `painel-escritorio`, index.html = cópia de `painel_site.html`; atualizar os dois juntos) e chama o `doPost` por fetch sem cookies (variável `API` no html). No editor:
   Código.gs = `painel_site.gs` com `SITE_PLANILHA` preenchido; index.html = `painel_site.html`. Depois de colar,
   Implantar › Gerenciar implantações › editar › Nova versão (o endereço não muda).
 
