@@ -345,17 +345,24 @@ function iniciar(json){
   desenhar();
 }
 function falhou(e){ document.getElementById('carregando').style.display='block'; document.getElementById('carregando').textContent='Não consegui carregar os dados: '+(e&&e.message||e); }
+// Endereço do Google que entrega os dados. Fora do Google (GitHub Pages) a página chama por fetch sem cookies,
+// porque com duas contas no mesmo Chrome o Google recusa abrir o app.
+var API='https://script.google.com/macros/s/AKfycbxMs_yO1falFhD5pfostBwruAmrwdPmk84YKTcM2IQ4OaoliCoQEse7uyTDsN8b2yb_DA/exec';
+function chamar(acao, arg, ok, falha){
+  if(window.google && google.script && google.script.run){ google.script.run.withSuccessHandler(ok).withFailureHandler(falha)[acao](arg); return; }
+  fetch(API,{method:'POST',credentials:'omit',redirect:'follow',body:JSON.stringify({acao:acao,arg:arg})})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); }).then(ok).catch(falha);
+}
 function ficha(){ try{ return localStorage.getItem('painelFicha')||''; }catch(e){ return ''; } }
 function carregar(){ document.getElementById('login').style.display='none'; document.getElementById('carregando').style.display='block';
-  google.script.run.withSuccessHandler(iniciar).withFailureHandler(falhou).dados(ficha()); }
+  chamar('dados', ficha(), iniciar, falhou); }
 function mostrarLogin(msg){ document.getElementById('carregando').style.display='none'; document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex'; document.getElementById('loginErro').textContent=msg||''; document.getElementById('senha').value=''; document.getElementById('senha').focus(); }
 document.getElementById('login').addEventListener('submit', function(e){
   e.preventDefault(); var bt=document.getElementById('btEntrar'); bt.disabled=true; bt.textContent='Conferindo…';
-  google.script.run.withSuccessHandler(function(j){ var r=JSON.parse(j); bt.disabled=false; bt.textContent='Entrar';
-      if(r.erro) return mostrarLogin(r.erro); try{localStorage.setItem('painelFicha', r.ficha);}catch(x){} document.getElementById('senha').value=''; carregar(); })
-    .withFailureHandler(function(x){ bt.disabled=false; bt.textContent='Entrar'; mostrarLogin('Falha: '+(x&&x.message||x)); })
-    .entrar(document.getElementById('senha').value);
+  chamar('entrar', document.getElementById('senha').value, function(j){ var r=JSON.parse(j); bt.disabled=false; bt.textContent='Entrar';
+      if(r.erro) return mostrarLogin(r.erro); try{localStorage.setItem('painelFicha', r.ficha);}catch(x){} document.getElementById('senha').value=''; carregar(); },
+    function(x){ bt.disabled=false; bt.textContent='Entrar'; mostrarLogin('Falha: '+(x&&x.message||x)); });
 });
 document.addEventListener('click', function(e){ if(e.target.id==='sair'){ e.preventDefault(); try{localStorage.removeItem('painelFicha');}catch(x){} location.reload(); } });
 if(ficha()) carregar(); else mostrarLogin('');

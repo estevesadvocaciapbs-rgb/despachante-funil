@@ -9,6 +9,8 @@
  * A planilha continua sendo o banco de dados (montada pelo painel.gs, 7h e 20h15).
  *
  * Arquivos no editor: Código.gs (este) e index.html (painel_site.html no GitHub).
+ * Endereço principal: GitHub Pages (repo painel-escritorio), que chama o doPost daqui sem cookies; o /exec
+ * do Google também abre, mas falha em Chrome com duas contas logadas.
  * Repositório PÚBLICO: aqui só o código; o id da planilha fica vazio no GitHub e é colado no editor.
  */
 var SITE_PLANILHA = '';   // id da planilha "Painel de Gestão – produtividade e custos"
@@ -38,6 +40,16 @@ function sSenha() { return PropertiesService.getScriptProperties().getProperty('
 function sFicha(senha) {  // o aparelho guarda só esta ficha, nunca a senha
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,
     'painel-gestao|' + senha, Utilities.Charset.UTF_8));
+}
+
+/** Porta para a página hospedada fora do Google (GitHub Pages): POST com {acao, arg}, sem cookies. */
+function doPost(e) {
+  var r;
+  try {
+    var q = JSON.parse(e.postData.contents);
+    r = q.acao === 'entrar' ? entrar(q.arg) : q.acao === 'dados' ? dados(q.arg) : JSON.stringify({ erro: 'Ação desconhecida.' });
+  } catch (x) { r = JSON.stringify({ erro: 'Pedido inválido.' }); }
+  return ContentService.createTextOutput(r).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Confere a senha digitada e devolve a ficha que o navegador guarda. */
