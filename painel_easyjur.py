@@ -35,15 +35,26 @@ def _todas(ej, ferramenta, **filtros):
     return itens
 
 
+def _texto(s):
+    """Desfaz acento quebrado do EasyJur ('ManifestaÃ§Ã£o' -> 'Manifestação') e junta os espaços."""
+    s = " ".join(str(s or "").split())
+    if "Ã" in s or "Â" in s:
+        try:
+            s = s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return s
+
+
 def prazos(ej, hoje):
     lista = []
     for p in _todas(ej, "list_agenda", tipo="PRAZO", data_interna_inicio=(hoje - timedelta(days=JANELA_DIAS)).isoformat(),
                     data_interna_fim=(hoje + timedelta(days=JANELA_DIAS)).isoformat()):
         lista.append({"id": p.get("id"), "data": p.get("data") or "", "data_cadastro": p.get("data_cadastro") or "",
                       "status": p.get("status") or "", "advogado": p.get("advogado") or "",
-                      "id_cliente": p.get("cliente") or "", "nome_cliente": (p.get("nome_cliente") or "").strip(),
+                      "id_cliente": p.get("cliente") or "", "nome_cliente": _texto(p.get("nome_cliente")),
                       "processo": p.get("processo") or "",
-                      "descricao": " ".join(str(p.get("descricao") or "").split())[:300]})
+                      "descricao": _texto(p.get("descricao"))[:300]})
     return lista
 
 
@@ -53,7 +64,7 @@ def clientes_ativos(ej):
         pid = p.get("id_cliente")
         if not pid:
             continue
-        c = por_id.setdefault(str(pid), {"id_pessoa": str(pid), "nome": (p.get("nome_cliente") or "").strip(),
+        c = por_id.setdefault(str(pid), {"id_pessoa": str(pid), "nome": _texto(p.get("nome_cliente")),
                                          "processos": 0})
         c["processos"] += 1
     return list(por_id.values())

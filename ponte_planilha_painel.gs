@@ -8,7 +8,7 @@
  *  - Drive (aqui mesmo, nos servidores do Google): arquivos criados ou editados nas pastas dos clientes. Em arquivo
  *    do Google (Documentos, Planilhas, Apresentações) o histórico de versões dá quem editou e quando; as versões da
  *    mesma pessoa com menos de 15 min de intervalo formam uma sessão de trabalho (mínimo de 5 min por sessão).
- *    Em .docx, PDF e imagem o Drive só guarda criação e última alteração: conta como atividade, sem tempo.
+ *    Em .docx, PDF e imagem o Drive só guarda criação e última alteração: conta como atividade, com 0 minuto.
  *  - EasyJur: o despachante (GitHub, painel_easyjur.py) manda os prazos da semana e os clientes com processo ativo
  *    pela ação "painel_easyjur" do doPost (ver ponte_planilha.gs); o EasyJur recusa o IP do VPS.
  *  - WhatsApp: a planilha "Conversas WhatsApp – banco diário" (PLANILHA_ID, da ponte_planilha.gs).
@@ -30,8 +30,8 @@ var PAINEL_RAIZES = {            // pasta-raiz -> como achar o cliente no caminh
 var PAINEL_FORA = ['Painel de Gestão'];   // pastas do Escritório que não são trabalho de cliente
 var PAINEL_COLS = ['data', 'cliente', 'área', 'origem', 'pessoa', 'email', 'ação', 'início', 'fim', 'minutos',
   'custo (R$)', 'arquivo', 'tipo', 'caminho', 'link', 'id_arquivo', 'id_pasta_cliente', 'gravado em'];
-var PAINEL_PECAS = [  // palavra no prazo -> palavra que o arquivo da peça deve ter no nome
-  ['replica', 'replica'], ['impugnacao', 'impugna'], ['contestacao', 'contesta'], ['contrarrazo', 'contrarraz'],
+var PAINEL_PECAS = [  // palavra no prazo -> expressão que o nome do arquivo (sem acento) deve ter
+  ['replica', 'replica|manifesta.*contesta|contestacao e doc'], ['impugnacao', 'impugna'], ['contestacao', 'contesta'], ['contrarrazo', 'contrarraz'],
   ['contraminuta', 'contraminuta'], ['recurso ordinario', 'recurso'], ['recurso de revista', 'revista'],
   ['agravo', 'agravo'], ['embargos', 'embargo'], ['quesito', 'quesito'], ['calculo', 'calculo'],
   ['alegacoes finais', 'alegac'], ['razoes finais', 'razoes'], ['emenda', 'emenda'], ['apelacao', 'apela'],
@@ -40,7 +40,11 @@ var PAINEL_PECAS = [  // palavra no prazo -> palavra que o arquivo da peça deve
 
 // ------------------------------------------------------------------ utilidades
 
-function pPlanilha() { return SpreadsheetApp.openById(PAINEL_ID); }
+function pPlanilha() {
+  var pl = SpreadsheetApp.openById(PAINEL_ID);
+  if (pl.getSpreadsheetTimeZone() !== FUSO) pl.setSpreadsheetTimeZone(FUSO);  // nasceu no fuso do Pacífico: datas viravam o dia
+  return pl;
+}
 
 function pAba(nome) {
   var pl = pPlanilha();
@@ -168,10 +172,10 @@ function pAtividades(f, desde, automatico) {
   var dono = (f.owners || [])[0] || {};
   if (criado >= desde) {
     lista.push({ u: (mod - criado < 10 * 60000) ? (f.lastModifyingUser || dono) : dono, quando: criado,
-      fim: criado, minutos: '', acao: 'criou' });
+      fim: criado, minutos: 0, acao: 'criou' });
   }
   if (mod - criado >= 10 * 60000 && mod >= desde) {
-    lista.push({ u: f.lastModifyingUser || {}, quando: mod, fim: mod, minutos: '', acao: 'editou' });
+    lista.push({ u: f.lastModifyingUser || {}, quando: mod, fim: mod, minutos: 0, acao: 'editou' });
   }
   return lista;
 }
@@ -219,6 +223,7 @@ function painelVarrer(dias) {
   });
   todas.forEach(function (l, i) {  // custo ao vivo: muda sozinho quando o custo da hora é trocado na aba Equipe
     var r = i + 2;
+    if (l[9] === '' || l[9] === null) l[9] = 0;  // coluna só de números: com vazio o QUERY não soma
     l[10] = '=IF(J' + r + '="";0;J' + r + '/60*IFERROR(VLOOKUP(F' + r + ';Equipe!A:C;3;FALSE);0))';
   });
   sh.clearContents();
@@ -400,7 +405,7 @@ function painelMontar() {
     var novos = [], comPeca = [];
     if (pasta) {
       novos = pArquivosDesde(pasta.id, desde);
-      comPeca = peca ? novos.filter(function (n) { return pNormal(n).indexOf(peca[1]) >= 0; }) : [];
+      comPeca = peca ? novos.filter(function (n) { return new RegExp(peca[1]).test(pNormal(n)); }) : [];
     }
     var alerta;
     if (pz['status'] === 'C') alerta = '✔ concluído';
@@ -520,7 +525,7 @@ function painelConfigurar() {
     ['Painel de Gestão: atualizado sozinho às 7h e às 20h (sem IA).'],
     ['Arquivos: cada arquivo criado ou editado nas pastas dos clientes, com quem fez, quando e quanto tempo.'],
     ['Tempo só existe em arquivo do Google (Documentos, Planilhas): sessões de edição, mínimo de 5 min cada.'],
-    ['Word, PDF e imagem contam como atividade sem tempo. Tempo só aberto, sem editar, o Google não registra.'],
+    ['Word, PDF e imagem contam como atividade com 0 minuto. Tempo só aberto, sem editar, o Google não registra.'],
     ['Quem fez = login do Google que salvou. Enquanto todos usam a conta do escritório, aparece "conta do escritório".'],
     ['Origem: equipe (trabalho do escritório), automático (WhatsApp salvo pela Za.Ia) ou cliente/terceiro.'],
     ['Custo = minutos ÷ 60 × custo da hora da pessoa na aba Equipe (muda na hora em que o valor é trocado).'],
