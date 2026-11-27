@@ -1,0 +1,36 @@
+name: Story do dia
+
+on:
+  schedule:
+    # Dias úteis 7h30, 14h e 19h de Belém; sábado e domingo 9h e 19h (UTC = Belém + 3 h).
+    - cron: "30 10 * * 1-5"
+    - cron: "0 17 * * 1-5"
+    - cron: "0 12 * * 0,6"
+    - cron: "0 22 * * *"
+  # Envio sem clique: um commit em story-agora.txt manda a ideia do horário atual.
+  push:
+    branches: [main]
+    paths: ["story-agora.txt"]
+  workflow_dispatch:
+
+concurrency:
+  group: story-do-dia
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Mandar a ideia de story ao Dr. Lucas
+        env:
+          ZAIA_TOKEN: ${{ secrets.ZAIA_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        run: python story_do_dia.py

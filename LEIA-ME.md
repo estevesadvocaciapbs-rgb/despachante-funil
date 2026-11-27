@@ -409,3 +409,10 @@ produzir o post de sexta. Ele responde começando por **EA** (EA SIM, EA SIM AGE
 EA AJUSTE ..., EA NÃO). O porteiro grava só o código e a hora em `em_alta.json` (ramo `sinal`), confirma o
 recebimento a ele e não acorda o Secretário. A sessão do computador espera esse arquivo e lê o texto pela Za.Ia.
 Teste: `python teste_em_alta.py`.
+
+## Story do dia (27/11/2026)
+
+`story_do_dia.py` + `.github/workflows/story-do-dia.yml`: manda ao privado do Dr. Lucas uma ideia pronta de story
+leve (o que gravar, texto na tela, sticker). Dias úteis 7h30, 14h e 19h; sábado e domingo 9h e 19h (Belém). Banco
+de ideias fixo no código, rotação por data, sem IA. Para mudar ou acrescentar ideias, editar as listas MANHA,
+TARDE, NOITE, FIM_DE_SEMANA e DATAS. Envio na hora: commit em `story-agora.txt`.
