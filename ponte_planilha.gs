@@ -28,6 +28,8 @@ function configurar() {
   aba(ABA_DADOS);
   aba(ABA_CLIENTES).hideSheet();
   montarResumo();
+  aba(ABA_RESUMO).getRange('A:A').setNumberFormat('dd/MM/yyyy');
+  aba(ABA_RESUMO).getRange('I:I').setNumberFormat('dd/MM/yyyy');
   Logger.log('Pronto. As abas foram criadas e a chave foi gerada. Para ver a chave, rode a função mostrarChave.');
 }
 
@@ -118,18 +120,19 @@ function gravarClientes(novos) {
   return { ok: true, total: linhas.length };
 }
 
-/** Aba Resumo: só fórmulas, recalculadas pelo próprio Google a cada gravação. */
+/** Aba Resumo: só fórmulas, recalculadas pelo próprio Google a cada gravação. A planilha está em português,
+ * então o separador das fórmulas é ponto e vírgula (com vírgula dá "Erro de análise de fórmula"). */
 function montarResumo() {
   var sh = aba(ABA_RESUMO);
   sh.clearContents();
   sh.getRange('A1').setValue('Por dia').setFontWeight('bold');
   sh.getRange('A2').setFormula(
-    '=IFERROR(QUERY(Conversas!A:Z,"select A, count(B), sum(L), sum(Q), sum(I), sum(J), sum(K) where A is not null ' +
+    '=IFERROR(QUERY(Conversas!A:Z;"select A, count(B), sum(L), sum(Q), sum(I), sum(J), sum(K) where A is not null ' +
     'group by A order by A desc label count(B) \'conversas\', sum(L) \'mensagens\', sum(Q) \'sem resposta\', ' +
-    'sum(I) \'msgs clientes\', sum(J) \'msgs equipe\', sum(K) \'msgs Annie\'",1),"sem dados ainda")');
+    'sum(I) \'msgs clientes\', sum(J) \'msgs equipe\', sum(K) \'msgs Annie\'";1);"sem dados ainda")');
   sh.getRange('I1').setValue('Conversas por tipo').setFontWeight('bold');
   sh.getRange('I2').setFormula(
-    '=IFERROR(QUERY(Conversas!A:Z,"select A, count(B) where A is not null group by A pivot F order by A desc",1),"")');
+    '=IFERROR(QUERY(Conversas!A:Z;"select A, count(B) where A is not null group by A pivot F order by A desc";1);"")');
 }
 
 /** Grava uma linha fictícia num dia de 1900 e apaga em seguida: confere que a ponte escreve. */
