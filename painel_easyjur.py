@@ -12,6 +12,7 @@ das conversas do dia (segredos GOOGLE_PLANILHA_URL e GOOGLE_PLANILHA_CHAVE), aç
 Repositório PÚBLICO: o log mostra só contagens; nomes e descrições vão direto para a planilha (privada).
 """
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -19,6 +20,7 @@ import despachante
 from conversas_dia import BRT, ponte_padrao
 
 JANELA_DIAS = 7
+_QUEBRADO = re.compile("[Â-Ã][-¿]")
 
 
 def _log(msg):
@@ -38,12 +40,8 @@ def _todas(ej, ferramenta, **filtros):
 def _texto(s):
     """Desfaz acento quebrado do EasyJur ('ManifestaÃ§Ã£o' -> 'Manifestação') e junta os espaços."""
     s = " ".join(str(s or "").split())
-    if "Ã" in s or "Â" in s:
-        try:
-            s = s.encode("latin-1").decode("utf-8")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            pass
-    return s
+    # trecho a trecho: o mesmo texto pode ter acento certo e acento quebrado
+    return _QUEBRADO.sub(lambda m: m.group().encode("latin-1").decode("utf-8", "replace"), s)
 
 
 def prazos(ej, hoje):

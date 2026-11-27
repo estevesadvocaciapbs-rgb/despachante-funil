@@ -22,7 +22,7 @@ class FakeEJ:
                                   "advogado": "Adv Teste", "cliente": 900, "nome_cliente": SEGREDO, "processo": 5,
                                   "descricao": "Prazo para  réplica\n"}], "meta": {"total_pages": 2}}
             return {"data": [{"id": 2, "data": "2026-11-25", "status": "C", "cliente": 0, "nome_cliente": "",
-                              "descricao": "ManifestaÃ§Ã£o " + "x" * 400}], "meta": {"total_pages": 2}}
+                              "descricao": "ManifestaÃ§Ã£o sobre contestação " + "x" * 400}], "meta": {"total_pages": 2}}
         if ferr == "list_processos":
             return {"data": [{"id_cliente": 900, "nome_cliente": SEGREDO}, {"id_cliente": 900, "nome_cliente": SEGREDO},
                              {"id_cliente": 901, "nome_cliente": "Outro Inventado"}, {"id_cliente": None}],
@@ -43,7 +43,7 @@ with contextlib.redirect_stdout(saida):
     pz, cl = pe.rodada(FakeEJ(), ponte=ponte, agora=AGORA)
 assert [p["id"] for p in pz] == [1, 2]
 assert pz[0]["descricao"] == "Prazo para réplica" and len(pz[1]["descricao"]) == 300
-assert pz[1]["descricao"].startswith("Manifestação x"), pz[1]["descricao"][:20]
+assert pz[1]["descricao"].startswith("Manifestação sobre contestação x"), pz[1]["descricao"][:20]
 assert sorted((c["id_pessoa"], c["processos"]) for c in cl) == [("900", 2), ("901", 1)]
 assert gravado["painel_easyjur"]["prazos"] == pz
 log = saida.getvalue()
