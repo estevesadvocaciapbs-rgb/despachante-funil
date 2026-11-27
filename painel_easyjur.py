@@ -20,7 +20,7 @@ import despachante
 from conversas_dia import BRT, ponte_padrao
 
 JANELA_DIAS = 7
-_QUEBRADO = re.compile("[Â-Ã][-¿]")
+_QUEBRADO = re.compile(r"[ÂÃ][\u0080-¿]")  # "Ã§", "Ã£", "Ãª"...
 
 
 def _log(msg):
