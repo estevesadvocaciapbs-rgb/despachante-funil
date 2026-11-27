@@ -452,7 +452,7 @@ function pResumos() {
   sh.getRange('A2').setFormula('=IFERROR(QUERY(Arquivos!A:R;"select B, C, count(L), sum(J), sum(K), max(A) ' +
     'where D = \'equipe\' and B <> \'\' and A >= date \'' + ult30 + '\' group by B, C order by count(L) desc ' +
     'label B \'cliente\', C \'área\', count(L) \'atividades\', sum(J) \'minutos\', sum(K) \'custo (R$)\', ' +
-    'max(A) \'última\'";1);"sem dados ainda")');
+    'max(A) \'última\' format max(A) \'dd/mm/yyyy\'";1);"sem dados ainda")');
   sh.getRange('I1').setValue('Hoje').setFontWeight('bold');
   sh.getRange('I2').setFormula('=IFERROR(QUERY(Arquivos!A:R;"select B, count(L), sum(J) where D = \'equipe\' ' +
     'and A = date \'"&TEXT(TODAY();"yyyy-mm-dd")&"\' group by B order by count(L) desc label B \'cliente\', ' +
