@@ -306,6 +306,14 @@ Sem IA, só código. Duas partes:
 - **Configurar:** custo da hora na aba Equipe; nome do EasyJur que não acha a pasta vai na aba "Ajustes de pasta".
 - **Atualizar o código no Google:** colar `ponte_planilha_painel.gs` no arquivo painel.gs trocando `PAINEL_ID`
   pelo id da planilha; `painelInicial()` refaz os últimos 30 dias.
+- **Site (`painel_site.gs` + `painel_site.html`):** projeto Apps Script próprio "Painel de Gestão - site"
+  (conta do escritório), App da Web executando como "Eu" e aberto a "Qualquer pessoa"; a porta é a senha
+  `SENHA_PAINEL` nas Propriedades do script (só o Dr. Lucas cadastra; ninguém escreve a senha em chat ou no
+  repositório). O aparelho guarda só uma ficha (hash); 10 erros bloqueiam 15 min; trocar a senha desconecta todos.
+  O `/exec` do Google falha em Chrome com duas contas logadas ("Não foi possível abrir o arquivo"), por isso a
+  página também roda fora do Google e chama o `doPost` por fetch sem cookies (variável `API` no html). No editor:
+  Código.gs = `painel_site.gs` com `SITE_PLANILHA` preenchido; index.html = `painel_site.html`. Depois de colar,
+  Implantar › Gerenciar implantações › editar › Nova versão (o endereço não muda).
 
 ## Parcelas do mês (`recebimentos.py`, desde 21/10/2026)
 
